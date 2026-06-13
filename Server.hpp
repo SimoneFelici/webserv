@@ -6,20 +6,31 @@
 #include <sys/socket.h>
 
 #define PORT 8080
+#define ADDRESS INADDR_ANY
+#define MAX_CONN SOMAXCONN
 
 class Server {
 public:
     Server();
     ~Server();
-    Server(const Server& other) = delete;
-    Server& operator=(const Server& other) = delete;
 
-    void set_port(int parsed_port);
+    bool start();
 
 private:
-    void create_socket();
-    void bind_socket();
-    void listen_socket();
+    Server(const Server& other);
+    Server& operator=(const Server& other);
+
+    bool create_socket();
+    bool bind_socket();
+    bool listen_socket();
+
+    void parser();
+    void set_port(int parsed_port);
+    void set_address(uint32_t parsed_address);
+    void set_max_conn(int parsed_max);
+
     int fd;
     int port;
+    uint32_t address;
+    int max_conn;
 };
