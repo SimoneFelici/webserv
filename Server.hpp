@@ -1,13 +1,8 @@
 #pragma once
 
-#include "Utils.hpp"
 #include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
-
-#define PORT 8080
-#define ADDRESS INADDR_ANY
-#define MAX_CONN SOMAXCONN
 
 class Server {
 public:

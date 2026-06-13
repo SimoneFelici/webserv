@@ -1,5 +1,4 @@
-#include "Server.hpp"
-#include "Utils.hpp"
+#include "webserv.hpp"
 
 // PARSING
 void Server::set_port(int parsed_port)
@@ -66,9 +65,11 @@ bool Server::listen_socket()
     return true;
 }
 
-// TODO: CLEANUP SERVER
+// CLEANUP SERVER
 Server::~Server()
 {
+    if (this->fd >= 0)
+        close(this->fd);
 }
 
 // SERVER
@@ -87,7 +88,7 @@ bool Server::start()
     if (!create_socket())
         return false;
 
-    Utils::set_nonblocking(fd);
+    set_nonblocking(fd);
 
     int opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
