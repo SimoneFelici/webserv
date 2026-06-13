@@ -66,7 +66,7 @@ bool Server::listen_socket()
     return true;
 }
 
-// CLEANUP SERVER
+// TODO: CLEANUP SERVER
 Server::~Server()
 {
 }
