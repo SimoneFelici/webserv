@@ -53,6 +53,7 @@ bool Server::create_socket()
 
 bool Server::bind_socket()
 {
+    // TODO: UPDATE NOTION WITH GETADDRINFO INFO
     struct addrinfo hints = {};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
