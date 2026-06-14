@@ -18,6 +18,7 @@ void Server::set_max_conn(int parsed_max)
 
 // TODO: READ CONFIG FILE AND PARSE REAL VALUES
 // TODO: BETTER OPEN ERROR LOGGING
+// INFO: the listen field in the config file can be used onlt with the port without an address, in that case the default is "0.0.0.0" which listens to any address!
 bool Server::parse_config(const char* conf_file)
 {
     int conf_fd = open(conf_file, O_RDONLY);
@@ -57,12 +58,9 @@ bool Server::bind_socket()
     struct addrinfo hints = {};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
 
     struct addrinfo* res = NULL;
-    const char* host = NULL;
-    if (!this->address.empty())
-        host = this->address.c_str();
+    const char* host = this->address.c_str();
 
     int err = getaddrinfo(host, this->port.c_str(), &hints, &res);
     if (err != 0) {
@@ -76,7 +74,7 @@ bool Server::bind_socket()
         return false;
     }
 
-    // TODO: TRANSLATE ADDRESS
+    // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
     std::cout << "Success: Address binded, Address: " << this->address << ", port: " << this->port << "\n";
     freeaddrinfo(res);
     return true;
