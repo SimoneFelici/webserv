@@ -45,7 +45,7 @@ bool Server::bind_socket()
     server_address.sin_port = htons(this->port);
     server_address.sin_addr.s_addr = htonl(this->address);
 
-    if (bind(fd, (struct sockaddr*)&server_address, sizeof(server_address))) {
+    if (bind(fd, (struct sockaddr*)&server_address, sizeof(server_address)) == -1) {
         std::cerr << "Error: Couldn't bind address\n";
         return false;
     }
@@ -56,7 +56,7 @@ bool Server::bind_socket()
 
 bool Server::listen_socket()
 {
-    if (listen(fd, this->max_conn)) {
+    if (listen(fd, this->max_conn) == -1) {
         std::cerr << "Error: Couldn't listen for connections\n";
         return false;
     }
