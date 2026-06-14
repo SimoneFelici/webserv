@@ -9,7 +9,7 @@ public:
     Server();
     ~Server();
 
-    bool start();
+    bool start(const char* conf_file);
 
 private:
     Server(const Server& other);
@@ -19,7 +19,7 @@ private:
     bool bind_socket();
     bool listen_socket();
 
-    void parser();
+    bool parse_config(const char* conf_file);
     void set_port(int parsed_port);
     void set_address(uint32_t parsed_address);
     void set_max_conn(int parsed_max);

@@ -16,13 +16,24 @@ void Server::set_max_conn(int parsed_max)
     this->max_conn = parsed_max;
 }
 
-void Server::parser()
+// TODO: read config file
+bool Server::parse_config(const char* conf_file)
 {
-    // READ CONFIG FILE...
+    int conf_fd = open(conf_file, O_RDONLY);
+
+    if (conf_fd < 0) {
+        std::cerr << "Error: couldn't open config file\n";
+        return false;
+    }
+
     set_port(PORT);
     // ADD LOG INFO...
     set_address(ADDRESS);
     set_max_conn(MAX_CONN);
+
+    close(conf_fd);
+
+    return true;
 }
 
 // SOCKET
@@ -40,7 +51,7 @@ bool Server::create_socket()
 
 bool Server::bind_socket()
 {
-    sockaddr_in server_address;
+    sockaddr_in server_address = {};
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(this->port);
     server_address.sin_addr.s_addr = htonl(this->address);
@@ -81,14 +92,16 @@ Server::Server()
 {
 }
 
-bool Server::start()
+bool Server::start(const char* conf_file)
 {
-    parser();
+    if (!parse_config(conf_file))
+        return false;
 
     if (!create_socket())
         return false;
 
-    set_nonblocking(fd);
+    if (!set_nonblocking(fd))
+        return false;
 
     int opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
