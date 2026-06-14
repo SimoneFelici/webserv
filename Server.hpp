@@ -28,8 +28,8 @@ private:
     void set_port(std::string parsed_port);
     void set_address(std::string parsed_address);
     void set_max_conn(int parsed_max);
-    bool accept_client(int client_fd);
-    void handle_client(int client_fd);
+    bool accept_new_client(int client_fd);
+    bool handle_client_read(int client_fd);
 
 
     int fd;

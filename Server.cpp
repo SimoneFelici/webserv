@@ -108,7 +108,7 @@ Server::Server()
 {
 }
 
-bool Server::accept_client(int client_fd)
+bool Server::accept_new_client(int client_fd)
 {
     if (!set_nonblocking(client_fd))
         return false;
@@ -124,8 +124,15 @@ bool Server::accept_client(int client_fd)
     return true;
 }
 
-void Server::handle_client(int client_fd)
+bool Server::handle_client_read(int client_fd)
 {
+    std::map<int, Client>::iterator it = this->clients.find(client_fd);
+    if (it == this->clients.end())
+    {
+        std::cerr << "Error: client not found\n";
+        return false;
+    }
+    Client &client = it->second;
     char buffer[4096];
 
     ssize_t bytes_read = recv(client_fd, buffer, sizeof(buffer), 0);
@@ -145,17 +152,18 @@ void Server::handle_client(int client_fd)
         // errore
         // se non è temporaneo, chiudo e rimuovo client
     }
+    return true;
 }
 
 bool Server::run()
 {
     pollfd server_poll;
     server_poll.fd = this->fd;
-    server_poll.events = POLLIN; 
-    server_poll.revents = 0;     // eventi restituiti da poll()
-    
+    server_poll.events = POLLIN;
+    server_poll.revents = 0; // eventi restituiti da poll()
+
     this->poll_fds.push_back(server_poll);
-    
+
     this->running = true;
     while (this->running)
     {
@@ -174,7 +182,7 @@ bool Server::run()
         for (size_t i = 0; i < count; ++i)
         {
             short revents = this->poll_fds[i].revents;
-            
+
             if (revents == 0)
                 continue;
 
@@ -183,7 +191,7 @@ bool Server::run()
                 std::cerr << "Error: server socket poll event failed\n";
                 return false;
             }
-            
+
             if (revents & POLLIN)
             {
                 if (this->poll_fds[i].fd == this->fd)
@@ -196,7 +204,7 @@ bool Server::run()
                         std::cerr << "Error: accept failed\n";
                         continue;
                     }
-                    if (!accept_client(client_fd))
+                    if (!accept_new_client(client_fd))
                     {
                         close(client_fd);
                         continue;
@@ -204,9 +212,20 @@ bool Server::run()
                 }
                 else
                 {
-                    handle_client(this->poll_fds[i].fd);
+                    if (!handle_client_read(this->poll_fds[i].fd))
+                        continue; // da gestire 
+                        /*
+                        handle_client_read legge e decide.
+                        Se il client è da chiudere, chiama close_client().
+                        Ritorna false solo se c'è stato un problema o il client è stato chiuso.
+                        */
                 }
             }
+            // DA GESTIRE
+            // if (revents & POLLOUT)
+            // {
+            //     handle_client_write(fd);
+            // }
         }
     }
     return true;
