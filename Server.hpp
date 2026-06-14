@@ -1,8 +1,7 @@
 #pragma once
 
-#include <iostream>
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include <netdb.h>
+#include <string>
 
 class Server {
 public:
@@ -20,12 +19,12 @@ private:
     bool listen_socket();
 
     bool parse_config(const char* conf_file);
-    void set_port(int parsed_port);
-    void set_address(uint32_t parsed_address);
+    void set_port(std::string parsed_port);
+    void set_address(std::string parsed_address);
     void set_max_conn(int parsed_max);
 
     int fd;
-    int port;
-    uint32_t address;
+    std::string port;
+    std::string address;
     int max_conn;
 };

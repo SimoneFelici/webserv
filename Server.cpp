@@ -1,12 +1,12 @@
 #include "webserv.hpp"
 
 // PARSING
-void Server::set_port(int parsed_port)
+void Server::set_port(std::string parsed_port)
 {
     this->port = parsed_port;
 }
 
-void Server::set_address(uint32_t parsed_address)
+void Server::set_address(std::string parsed_address)
 {
     this->address = parsed_address;
 }
@@ -16,7 +16,8 @@ void Server::set_max_conn(int parsed_max)
     this->max_conn = parsed_max;
 }
 
-// TODO: read config file
+// TODO: READ CONFIG FILE AND PARSE REAL VALUES
+// TODO: BETTER OPEN ERROR LOGGING
 bool Server::parse_config(const char* conf_file)
 {
     int conf_fd = open(conf_file, O_RDONLY);
@@ -29,6 +30,7 @@ bool Server::parse_config(const char* conf_file)
     set_port(PORT);
     // ADD LOG INFO...
     set_address(ADDRESS);
+    // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO SOMAXCON
     set_max_conn(MAX_CONN);
 
     close(conf_fd);
@@ -41,7 +43,7 @@ bool Server::create_socket()
 {
     this->fd = socket(AF_INET, SOCK_STREAM, 0);
     if (this->fd == -1) {
-        std::cerr << "Error: couldn't create socket\n";
+        std::cerr << "Error: couldn't create socket: " << strerror(errno) << std::endl;
         return false;
     }
 
@@ -51,24 +53,38 @@ bool Server::create_socket()
 
 bool Server::bind_socket()
 {
-    sockaddr_in server_address = {};
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(this->port);
-    server_address.sin_addr.s_addr = htonl(this->address);
+    struct addrinfo hints = {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
 
-    if (bind(fd, (struct sockaddr*)&server_address, sizeof(server_address)) == -1) {
-        std::cerr << "Error: Couldn't bind address\n";
+    struct addrinfo* res = NULL;
+    const char* host = NULL;
+    if (!this->address.empty())
+        host = this->address.c_str();
+
+    int err = getaddrinfo(host, this->port.c_str(), &hints, &res);
+    if (err != 0) {
+        std::cerr << "Error: getaddrinfo: " << gai_strerror(err) << std::endl;
         return false;
     }
 
+    if (bind(fd, res->ai_addr, res->ai_addrlen) == -1) {
+        std::cerr << "Error: Couldn't bind address: " << strerror(errno) << std::endl;
+        freeaddrinfo(res);
+        return false;
+    }
+
+    // TODO: TRANSLATE ADDRESS
     std::cout << "Success: Address binded, Address: " << this->address << ", port: " << this->port << "\n";
+    freeaddrinfo(res);
     return true;
 }
 
 bool Server::listen_socket()
 {
     if (listen(fd, this->max_conn) == -1) {
-        std::cerr << "Error: Couldn't listen for connections\n";
+        std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return false;
     }
 
@@ -86,8 +102,6 @@ Server::~Server()
 // SERVER
 Server::Server()
     : fd(-1)
-    , port(0)
-    , address(0)
     , max_conn(0)
 {
 }
@@ -105,7 +119,7 @@ bool Server::start(const char* conf_file)
 
     int opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-        std::cerr << "Error: Couldn't set reuse address socket option :(\n";
+        std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
         return false;
     }
     std::cout << "Success: Reuse address socket option enabled\n";
