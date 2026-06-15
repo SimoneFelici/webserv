@@ -1,36 +1,37 @@
 #pragma once
 
+#include "Client.hpp"
+#include <map>
 #include <netdb.h>
 #include <string>
+#include <sys/epoll.h>
 #include <vector>
-#include <map>
-#include <poll.h>
-#include "Client.hpp"
 
 class Server {
-public:
+  public:
     Server();
     ~Server();
 
-    bool start(const char* conf_file);
+    bool start(const char *conf_file);
 
-private:
-    Server(const Server& other);
-    Server& operator=(const Server& other);
+  private:
+    Server(const Server &other);
+    Server &operator=(const Server &other);
 
     bool create_socket();
     bool bind_socket();
     bool listen_socket();
     bool run();
-    
 
-    bool parse_config(const char* conf_file);
+    bool parse_config(const char *conf_file);
     void set_port(std::string parsed_port);
     void set_address(std::string parsed_address);
     void set_max_conn(int parsed_max);
-    bool accept_new_client(int client_fd);
-    bool handle_client_read(int client_fd);
 
+    bool add_epoll_fd(int fd, uint32_t events);
+    void accept_client(int client_fd);
+    void close_client(int client_fd);
+    bool handle_client_read(int client_fd);
 
     int fd;
     std::string port;
@@ -38,6 +39,6 @@ private:
     int max_conn;
     bool running;
 
-    std::vector<pollfd> poll_fds;
+    int epoll_fd;
     std::map<int, Client> clients;
 };
