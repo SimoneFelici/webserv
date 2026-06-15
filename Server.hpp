@@ -32,6 +32,7 @@ class Server {
     bool accept_client(int client_fd);
     void close_client(int client_fd);
     bool handle_client_read(int client_fd);
+    void close_all_clients();
 
     int fd;
     std::string port;

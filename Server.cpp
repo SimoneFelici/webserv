@@ -41,8 +41,7 @@ bool Server::create_socket()
     this->fd = socket(AF_INET, SOCK_STREAM, 0);
     if (this->fd == -1)
     {
-        std::cerr << "Error: couldn't create socket: " << strerror(errno)
-                  << std::endl;
+        std::cerr << "Error: couldn't create socket: " << strerror(errno) << std::endl;
         return (false);
     }
     std::cout << "Success: Socket created, server fd: " << this->fd << "\n";
@@ -68,14 +67,12 @@ bool Server::bind_socket()
     }
     if (bind(fd, res->ai_addr, res->ai_addrlen) == -1)
     {
-        std::cerr << "Error: Couldn't bind address: " << strerror(errno)
-                  << std::endl;
+        std::cerr << "Error: Couldn't bind address: " << strerror(errno) << std::endl;
         freeaddrinfo(res);
         return (false);
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
-    std::cout << "Success: Address binded, Address: " << this->address
-              << ", port : " << this->port << "\n ";
+    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n ";
     freeaddrinfo(res);
     return (true);
 }
@@ -84,12 +81,10 @@ bool Server::listen_socket()
 {
     if (listen(fd, this->max_conn) == -1)
     {
-        std::cerr << "Error: Couldn't listen for connections: "
-                  << strerror(errno) << std::endl;
+        std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening, max connections : "
-              << this->max_conn << "\n ";
+    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n ";
     return (true);
 }
 
@@ -138,15 +133,25 @@ void Server::close_client(int client_fd)
     this->clients.erase(client_fd);
 }
 
-bool Server::handle_client_read(int client_fd) { return (true); }
+void Server::close_all_clients()
+{
+    while (!this->clients.empty())
+    {
+        close_client(this->clients.begin()->first);
+    }
+}
+
+bool Server::handle_client_read(int client_fd)
+{
+    return (true);
+}
 
 bool Server::run()
 {
     const int max_events = 1024;
     int client_fd;
 
-    this->epoll_fd = epoll_create1(0);
-    // oggetto del kernel che serve a monitorare altri fd.
+    this->epoll_fd = epoll_create1(0); // oggetto del kernel che serve a monitorare altri fd.
     if (this->epoll_fd == -1)
     {
         std::cerr << "Error: epoll_create1 failed: " << strerror(errno) << std::endl;
@@ -169,8 +174,8 @@ bool Server::run()
         {
             if (errno == EINTR)
                 continue;
-            std::cerr << "Error: epoll_wait failed: " << strerror(errno)
-                      << std::endl;
+            std::cerr << "Error: epoll_wait failed: " << strerror(errno) << std::endl;
+            close_all_clients();
             close(this->epoll_fd);
             this->epoll_fd = -1;
             return false;
@@ -178,13 +183,12 @@ bool Server::run()
         for (int i = 0; i < ready; ++i)
         // Con epoll scorro solo gli eventi pronti.
         {
-            int current_fd = events[i].data.fd;
-            // current_fd è il fd su cui è successo qualcosa.
-            uint32_t revents = events[i].events;
-            // revents contiene cosa è successo:
+            int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
+            uint32_t revents = events[i].events; // revents contiene cosa è successo:
             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
             {
                 std::cerr << "Error: server socket epoll event failed\n";
+                close_all_clients();
                 close(this->epoll_fd);
                 this->epoll_fd = -1;
                 return false;
@@ -201,8 +205,7 @@ bool Server::run()
                     client_fd = accept(this->fd, NULL, NULL);
                     if (client_fd == -1)
                     {
-                        std::cerr << "Error: accept failed: " << strerror(errno)
-                                  << std::endl;
+                        std::cerr << "Error: accept failed: " << strerror(errno) << std::endl;
                         continue;
                     }
                     if (!accept_client(client_fd))
@@ -231,6 +234,7 @@ bool Server::run()
             }
         }
     }
+    close_all_clients();
     close(this->epoll_fd);
     this->epoll_fd = -1;
     return true;
@@ -249,8 +253,7 @@ bool Server::start(const char *conf_file)
     opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
     {
-        std::cerr << "Error: Couldn't set reuse address socket option: "
-                  << strerror(errno) << std::endl;
+        std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
         return false;
     }
     std::cout << "Success: Reuse address socket option enabled" << std::endl;
@@ -258,6 +261,7 @@ bool Server::start(const char *conf_file)
         return false;
     if (!listen_socket())
         return false;
-    // run() ?
+    // if  (!run())
+    //     return false;
     return true;
 }
