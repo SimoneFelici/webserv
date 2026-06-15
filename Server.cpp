@@ -3,7 +3,8 @@
 // PARSING
 void Server::set_port(std::string parsed_port) { this->port = parsed_port; }
 
-void Server::set_address(std::string parsed_address) {
+void Server::set_address(std::string parsed_address)
+{
     this->address = parsed_address;
 }
 
@@ -14,11 +15,13 @@ void Server::set_max_conn(int parsed_max) { this->max_conn = parsed_max; }
 // INFO: the listen field in the config file can be used onlt with the port
 // without an address, in that case the default is "0.0.0.0" which listens to
 // any address!
-bool Server::parse_config(const char *conf_file) {
+bool Server::parse_config(const char *conf_file)
+{
     int conf_fd;
 
     conf_fd = open(conf_file, O_RDONLY);
-    if (conf_fd < 0) {
+    if (conf_fd < 0)
+    {
         std::cerr << "Error: couldn't open config file\n";
         return (false);
     }
@@ -33,9 +36,11 @@ bool Server::parse_config(const char *conf_file) {
 }
 
 // SOCKET
-bool Server::create_socket() {
+bool Server::create_socket()
+{
     this->fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (this->fd == -1) {
+    if (this->fd == -1)
+    {
         std::cerr << "Error: couldn't create socket: " << strerror(errno)
                   << std::endl;
         return (false);
@@ -44,7 +49,8 @@ bool Server::create_socket() {
     return (true);
 }
 
-bool Server::bind_socket() {
+bool Server::bind_socket()
+{
     struct addrinfo hints;
     struct addrinfo *res;
     const char *host = this->address.c_str();
@@ -55,11 +61,13 @@ bool Server::bind_socket() {
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
     err = getaddrinfo(host, this->port.c_str(), &hints, &res);
-    if (err != 0) {
+    if (err != 0)
+    {
         std::cerr << "Error: getaddrinfo: " << gai_strerror(err) << std::endl;
         return (false);
     }
-    if (bind(fd, res->ai_addr, res->ai_addrlen) == -1) {
+    if (bind(fd, res->ai_addr, res->ai_addrlen) == -1)
+    {
         std::cerr << "Error: Couldn't bind address: " << strerror(errno)
                   << std::endl;
         freeaddrinfo(res);
@@ -67,39 +75,45 @@ bool Server::bind_socket() {
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
     std::cout << "Success: Address binded, Address: " << this->address
-              << ",
-        port : " << this->port << "\n ";
-               freeaddrinfo(res);
+              << ", port : " << this->port << "\n ";
+    freeaddrinfo(res);
     return (true);
 }
 
-bool Server::listen_socket() {
-    if (listen(fd, this->max_conn) == -1) {
+bool Server::listen_socket()
+{
+    if (listen(fd, this->max_conn) == -1)
+    {
         std::cerr << "Error: Couldn't listen for connections: "
                   << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening,
-        max connections : " << this->max_conn << "\n ";
-                          return (true);
+    std::cout << "Success: Socket listening, max connections : "
+              << this->max_conn << "\n ";
+    return (true);
 }
 
 // CLEANUP SERVER
-Server::~Server() {
+Server::~Server()
+{
     if (this->fd >= 0)
         close(this->fd);
 }
 
 // SERVER
 Server::Server()
-    : fd(-1), port(), address(), max_conn(0), running(false), epoll_fd(-1) {}
+    : fd(-1), port(), address(), max_conn(0), running(false), epoll_fd(-1)
+{
+}
 
-bool Server::add_epoll_fd(int fd, uint32_t events) {
+bool Server::add_epoll_fd(int fd, uint32_t events)
+{
     epoll_event event;
 
     event.events = events;
     event.data.fd = fd;
-    if (epoll_ctl(this->epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
+    if (epoll_ctl(this->epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1)
+    {
         std::cerr << "Error: epoll_ctl ADD failed: " << strerror(errno)
                   << std::endl;
         return (false);
@@ -107,7 +121,8 @@ bool Server::add_epoll_fd(int fd, uint32_t events) {
     return (true);
 }
 
-bool Server::accept_client(int client_fd) {
+bool Server::accept_client(int client_fd)
+{
     if (!set_nonblocking(client_fd))
         return (false);
     if (!add_epoll_fd(client_fd, EPOLLIN))
@@ -116,7 +131,8 @@ bool Server::accept_client(int client_fd) {
     return (true);
 }
 
-void Server::close_client(int client_fd) {
+void Server::close_client(int client_fd)
+{
     epoll_ctl(this->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
     close(client_fd);
     this->clients.erase(client_fd);
@@ -124,31 +140,33 @@ void Server::close_client(int client_fd) {
 
 bool Server::handle_client_read(int client_fd) { return (true); }
 
-bool Server::run() {
+bool Server::run()
+{
     const int max_events = 1024;
     int client_fd;
 
     this->epoll_fd = epoll_create1(0);
     // oggetto del kernel che serve a monitorare altri fd.
-    if (this->epoll_fd == -1) {
-        std::cerr << "Error: epoll_create1 failed: " << strerror(errno)
-                  << std::endl;
+    if (this->epoll_fd == -1)
+    {
+        std::cerr << "Error: epoll_create1 failed: " << strerror(errno) << std::endl;
         return false;
     }
     // Aggiungo il server alla lista fd di epoll
-    if (!add_epoll_fd(this->fd, EPOLLIN)) {
+    if (!add_epoll_fd(this->fd, EPOLLIN))
+    {
         close(this->epoll_fd);
         this->epoll_fd = -1;
         return false;
     }
     this->running = true;
-    epoll_event events[max_events]; // array dove epoll_wait() scriverà gli
-                                    // eventi pronti.
+    epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
-    while (this->running) {
-        int ready = epoll_wait(this->epoll_fd, events, max_events,
-                               -1); // ready è il numero di eventi pronti.
-        if (ready == -1) {
+    while (this->running)
+    {
+        int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
+        if (ready == -1)
+        {
             if (errno == EINTR)
                 continue;
             std::cerr << "Error: epoll_wait failed: " << strerror(errno)
@@ -164,31 +182,37 @@ bool Server::run() {
             // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events;
             // revents contiene cosa è successo:
-            if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP))) {
+            if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
+            {
                 std::cerr << "Error: server socket epoll event failed\n";
                 close(this->epoll_fd);
                 this->epoll_fd = -1;
                 return false;
             }
-            if (current_fd != this->fd && (revents & (EPOLLERR | EPOLLHUP))) {
+            if (current_fd != this->fd && (revents & (EPOLLERR | EPOLLHUP)))
+            {
                 close_client(current_fd);
                 continue;
             }
-            if (revents & EPOLLIN) {
-                if (current_fd == this->fd) // se è l fd corrente quello del
-                                            // server sono nuove connessioni
+            if (revents & EPOLLIN)
+            {
+                if (current_fd == this->fd) // se è l fd corrente quello del server sono nuove connessioni
                 {
                     client_fd = accept(this->fd, NULL, NULL);
-                    if (client_fd == -1) {
+                    if (client_fd == -1)
+                    {
                         std::cerr << "Error: accept failed: " << strerror(errno)
                                   << std::endl;
                         continue;
                     }
-                    if (!accept_client(client_fd)) {
+                    if (!accept_client(client_fd))
+                    {
                         close(client_fd);
                         continue;
                     }
-                } else {
+                }
+                else
+                {
                     if (!handle_client_read(current_fd)) // DA IMPLEMENTARE
                     {
                         close_client(current_fd);
@@ -197,8 +221,10 @@ bool Server::run() {
                 }
             }
             // DA IMPLEMENTARE
-            if (revents & EPOLLOUT) {
-                if (current_fd != this->fd) {
+            if (revents & EPOLLOUT)
+            {
+                if (current_fd != this->fd)
+                {
                     // if (!handle_client_write(current_fd))
                     continue;
                 }
@@ -210,7 +236,8 @@ bool Server::run() {
     return true;
 }
 
-bool Server::start(const char *conf_file) {
+bool Server::start(const char *conf_file)
+{
     int opt;
 
     if (!parse_config(conf_file))
@@ -220,7 +247,8 @@ bool Server::start(const char *conf_file) {
     if (!set_nonblocking(fd))
         return false;
     opt = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
+    {
         std::cerr << "Error: Couldn't set reuse address socket option: "
                   << strerror(errno) << std::endl;
         return false;
