@@ -29,7 +29,7 @@ class Server {
     void set_max_conn(int parsed_max);
 
     bool add_epoll_fd(int fd, uint32_t events);
-    void accept_client(int client_fd);
+    bool accept_client(int client_fd);
     void close_client(int client_fd);
     bool handle_client_read(int client_fd);
 

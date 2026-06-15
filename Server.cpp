@@ -230,6 +230,6 @@ bool Server::start(const char *conf_file) {
         return false;
     if (!listen_socket())
         return false;
-    // return run_socket() ?
+    // run() ?
     return true;
 }
