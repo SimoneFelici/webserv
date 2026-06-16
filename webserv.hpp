@@ -1,13 +1,9 @@
 #pragma once
 
-#include "Client.hpp"
-#include "Server.hpp"
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
-#include <netdb.h>
-#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>

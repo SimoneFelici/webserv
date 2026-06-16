@@ -1,3 +1,4 @@
+#include "Server.hpp"
 #include "webserv.hpp"
 
 // PARSING

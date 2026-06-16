@@ -5,9 +5,9 @@
 #include <netdb.h>
 #include <string>
 #include <sys/epoll.h>
-#include <vector>
 
-class Server {
+class Server
+{
   public:
     Server();
     ~Server();

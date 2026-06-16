@@ -1,6 +1,9 @@
 #pragma once
 
-class Client {
+#include <string>
+
+class Client
+{
   public:
     Client(int fd);
     Client();

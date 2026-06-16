@@ -9,7 +9,8 @@ Client::Client(const Client &other) : fd(other.fd) {}
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
 
-Client &Client::operator=(const Client &other) {
+Client &Client::operator=(const Client &other)
+{
     if (this != &other)
         this->fd = other.fd;
     return *this;
