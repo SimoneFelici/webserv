@@ -92,7 +92,8 @@ bool Server::listen_socket()
 // CLEANUP SERVER
 Server::~Server()
 {
-    if (this->fd >= 0)
+    // CLOSE SERVER FD
+    if (this->fd != -1)
         close(this->fd);
 }
 
