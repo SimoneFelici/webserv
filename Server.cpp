@@ -92,6 +92,12 @@ bool Server::listen_socket()
 // CLEANUP SERVER
 Server::~Server()
 {
+    // CLOSE EPOLL FD
+    if (this->epoll_fd != -1)
+    {
+        close(this->epoll_fd);
+        this->epoll_fd = -1;
+    }
     // CLOSE SERVER FD
     if (this->fd != -1)
         close(this->fd);
@@ -145,7 +151,31 @@ void Server::close_all_clients()
 
 bool Server::handle_client_read(int client_fd)
 {
-    return (true);
+    std::map<int, Client>::iterator it = this->clients.find(client_fd);
+    if (it == this->clients.end())
+        return false;
+    
+    Client &client = it->second; // client è un riferimento al Client dentro la map, quindi quando fai append modifichi davvero quel client.
+    char temp[4096];
+
+    ssize_t bytes_read = recv(client_fd, temp, sizeof(temp), 0);
+
+    if (bytes_read <= 0)
+    {
+        std::cout << "recv failed and/or Client disconnected: " << client_fd << std::endl;
+        return false;
+    }
+
+    client.append_request(temp, bytes_read);
+
+    const std::string &request = client.get_request();
+
+    if (request.find("\r\n\r\n") == std::string::npos)
+        return true;
+    // 1. preparare response provvisoria
+    // 2. salvarla nel Client
+    // 3. modificare epoll da EPOLLIN a EPOLLOUT
+    return true;
 }
 
 bool Server::run()
@@ -161,11 +191,7 @@ bool Server::run()
     }
     // Aggiungo il server alla lista fd di epoll
     if (!add_epoll_fd(this->fd, EPOLLIN))
-    {
-        close(this->epoll_fd);
-        this->epoll_fd = -1;
         return false;
-    }
     this->running = true;
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
@@ -178,21 +204,17 @@ bool Server::run()
                 continue;
             std::cerr << "Error: epoll_wait failed: " << strerror(errno) << std::endl;
             close_all_clients();
-            close(this->epoll_fd);
-            this->epoll_fd = -1;
             return false;
         }
-        for (int i = 0; i < ready; ++i)
         // Con epoll scorro solo gli eventi pronti.
+        for (int i = 0; i < ready; ++i)
         {
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events; // revents contiene cosa è successo:
             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
             {
-                std::cerr << "Error: server socket epoll event failed\n";
+                std::cerr << "Error: server socket epoll event failed" << std::endl;
                 close_all_clients();
-                close(this->epoll_fd);
-                this->epoll_fd = -1;
                 return false;
             }
             if (current_fd != this->fd && (revents & (EPOLLERR | EPOLLHUP)))
@@ -237,8 +259,6 @@ bool Server::run()
         }
     }
     close_all_clients();
-    close(this->epoll_fd);
-    this->epoll_fd = -1;
     return true;
 }
 

@@ -7,10 +7,7 @@ class Client
   public:
     Client(int fd);
     Client();
-    Client(const Client &other);
     ~Client();
-
-    Client &operator=(const Client &other);
 
     int get_fd() const;
     void set_fd(int fd);
@@ -20,5 +17,7 @@ class Client
 
   private:
     int fd;
-    std::string buffer;
+    std::string request_buffer;
+    std::string response_buffer;
+    size_t      _bytes_sent;
 };
