@@ -56,7 +56,7 @@ bool Server::bind_socket()
     const char *host = this->address.c_str();
     int err;
 
-    hints = {};
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
@@ -166,12 +166,13 @@ bool Server::handle_client_read(int client_fd)
         return false;
     }
 
-    client.append_request(temp, bytes_read);
-
-    const std::string &request = client.get_request();
-
-    if (request.find("\r\n\r\n") == std::string::npos)
+    if (!client.has_full_header(temp, bytes_read))
         return true;
+    // DEBUG
+    std::cout << "Client " << client_fd << " read " << bytes_read << " bytes" << std::endl;
+    std::cout << "Request: " << client.get_request() << std::endl;
+
+
     // 1. preparare response provvisoria
     // 2. salvarla nel Client
     // 3. modificare epoll da EPOLLIN a EPOLLOUT
@@ -283,7 +284,7 @@ bool Server::start(const char *conf_file)
         return false;
     if (!listen_socket())
         return false;
-    // if  (!run())
-    //     return false;
+     if  (!run())
+         return false;
     return true;
 }

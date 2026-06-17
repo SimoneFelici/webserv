@@ -159,3 +159,207 @@ Può arrivare tutta insieme, ma non devi mai darlo per scontato. Come si gestisc
                return true
 ```
 
+EPOLLIN  -> handle_client_read()
+         -> request completa
+         -> client.set_response(...)
+         -> epoll_ctl: passa a EPOLLOUT
+
+EPOLLOUT -> handle_client_write()
+         -> send(response)
+         -> se response completa:
+              close(fd)
+              clients.erase(fd)
+              epoll_ctl DEL
+
+
+# HTTP request 
+
+```
+ Client 5 read 704 bytes
+Request: GET / HTTP/1.1
+Host: localhost:8080
+Connection: keep-alive
+Cache-Control: max-age=0
+sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7
+```
+
+### 1. Request line
+ 
+Coposta da:
+```
+GET / HTTP/1.1
+METHOD PATH VERSION
+```
+è la request line.
+
+Vuol dire:
+```
+metodo:  GET
+path:    /
+version: HTTP/1.1
+```
+Tutte le righe dopo sono headers.
+
+### 2. Headers
+
+Dopo la request line arrivano gli headers.
+
+Gli headers sono righe fatt così:
+```
+Chiave: valore
+```
+Esempio:
+```
+Host: localhost:8080
+```
+
+I più importanti della tua request:
+
+**Host: localhost:8080**
+
+Dice al server quale host il browser sta cercando di raggiungere.
+In HTTP/1.1 l’header Host è importante, perché uno stesso server può teoricamente servire più siti o più configurazioni.
+
+---
+
+**Connection: keep-alive**  
+Il browser ti sta dicendo: 
+dopo la response, se puoi, non chiudere subito la connessione. Tienila aperta, così posso riusarla.
+
+---
+
+**Cache-Control: max-age=0**
+
+Il browser sta dicendo qualcosa tipo:
+
+voglio una risposta fresca, non usare una copia vecchia dalla cache.
+
+---
+
+**sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform**  
+```
+sec-ch-ua: "Google Chrome";v="147", 
+"Not.A/Brand";v="8", 
+"Chromium";v="147"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+```
+Sono headers moderni del browser. Danno informazioni sul browser/piattaforma.
+
+Nel tuo caso dicono più o meno:
+
+- browser: Chrome/Chromium
+- mobile: no
+- sistema: Linux
+
+---
+
+**Upgrade-Insecure-Requests: 1**
+
+Il browser dice:
+
+se esiste una versione HTTPS della risorsa, preferirei quella.
+
+Tu stai facendo un server HTTP normale, quindi per ora ignori.
+
+---
+**User-Agent**  
+
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ...
+
+Questo descrive il browser/client.
+
+---
+
+**Accept**
+```
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,...
+```
+Qui il browser dice:
+
+questi sono i tipi di contenuto che so ricevere.
+
+Per esempio:
+```
+text/html                  pagine HTML
+application/xhtml+xml      XHTML
+application/xml            XML
+image/avif                 immagini AVIF
+image/webp                 immagini WebP
+image/apng                 immagini APNG
+*/*                        qualsiasi cosa
+```
+Più avanti, quando servirai file veri, tu dovrai rispondere con un Content-Type adatto.
+
+Esempio:
+
+Content-Type: text/html
+
+---
+
+**Sec-Fetch-***
+```
+Sec-Fetch-Site: cross-site
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+```
+Sono headers di sicurezza/contesto del browser.
+
+Dicono che tipo di navigazione sta facendo il browser.
+
+Nel tuo caso:
+
+Mode: navigate
+Dest: document
+
+Cioè il browser sta navigando verso una pagina/documento.
+
+Per Webserv base li ignori.
+
+---
+
+**Accept-Encoding**
+
+Accept-Encoding: gzip, deflate, br, zstd
+
+Il browser dice:
+
+se vuoi, puoi mandarmi contenuto compresso con gzip, br, zstd, ecc.
+
+---
+
+**Accept-Language**
+
+Accept-Language: it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7
+
+Il browser dice:
+
+preferisco italiano, poi inglese americano, poi inglese.
+
+### 3. Riga vuota finale
+
+Alla fine vedi una riga vuota.
+
+In realtà, internamente, non è “magia”: sono questi caratteri:
+```
+\r\n\r\n
+```
+Questa sequenza significa: fine degli headers
+```
+request_buffer.find("\r\n\r\n")
+```
+Quindi quando trovi \r\n\r\n, sai che almeno questa parte è completa:
+
+request line + headers
