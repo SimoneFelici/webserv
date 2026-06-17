@@ -5,6 +5,9 @@
 #include <netdb.h>
 #include <string>
 #include <sys/epoll.h>
+#include <ctime>
+
+#define DEBUG 1
 
 class Server
 {

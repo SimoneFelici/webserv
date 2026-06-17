@@ -195,9 +195,16 @@ bool Server::run()
         return false;
     this->running = true;
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
-
+    
+    time_t start = time(0);
     while (this->running)
     {
+        // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
+        if ((DEBUG) && (time(NULL) - start >= 5))
+        {
+            this->running = false;
+        }
+        
         int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
         {
@@ -210,6 +217,7 @@ bool Server::run()
         // Con epoll scorro solo gli eventi pronti.
         for (int i = 0; i < ready; ++i)
         {
+            std::cout << "PROVA!" << std::endl;
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events; // revents contiene cosa è successo:
             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
