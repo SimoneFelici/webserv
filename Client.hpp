@@ -19,5 +19,5 @@ class Client
     int fd;
     std::string request_buffer;
     std::string response_buffer;
-    size_t      _bytes_sent;
+    size_t _bytes_sent;
 };

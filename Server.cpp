@@ -154,7 +154,7 @@ bool Server::handle_client_read(int client_fd)
     std::map<int, Client>::iterator it = this->clients.find(client_fd);
     if (it == this->clients.end())
         return false;
-    
+
     Client &client = it->second; // client è un riferimento al Client dentro la map, quindi quando fai append modifichi davvero quel client.
     char temp[4096];
 
