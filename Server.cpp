@@ -94,10 +94,7 @@ Server::~Server()
 {
     // CLOSE EPOLL FD
     if (this->epoll_fd != -1)
-    {
         close(this->epoll_fd);
-        this->epoll_fd = -1;
-    }
     // CLOSE SERVER FD
     if (this->fd != -1)
         close(this->fd);
@@ -184,6 +181,7 @@ bool Server::run()
     const int max_events = 1024;
     int client_fd;
 
+    // TODO: CHECK IF epoll_create1 is allowed
     this->epoll_fd = epoll_create1(0); // oggetto del kernel che serve a monitorare altri fd.
     if (this->epoll_fd == -1)
     {
@@ -195,16 +193,15 @@ bool Server::run()
         return false;
     this->running = true;
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
-    
-    time_t start = time(0);
+
+    // DEBUG: remove after testing
+    time_t start = time(NULL);
     while (this->running)
     {
         // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
         if ((DEBUG) && (time(NULL) - start >= 5))
-        {
             this->running = false;
-        }
-        
+
         int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
         {
@@ -217,7 +214,6 @@ bool Server::run()
         // Con epoll scorro solo gli eventi pronti.
         for (int i = 0; i < ready; ++i)
         {
-            std::cout << "PROVA!" << std::endl;
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events; // revents contiene cosa è successo:
             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
@@ -281,6 +277,7 @@ bool Server::start(const char *conf_file)
         return false;
     if (!set_nonblocking(fd))
         return false;
+
     opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
     {
@@ -288,11 +285,12 @@ bool Server::start(const char *conf_file)
         return false;
     }
     std::cout << "Success: Reuse address socket option enabled" << std::endl;
+
     if (!bind_socket())
         return false;
     if (!listen_socket())
         return false;
-     if  (!run())
-         return false;
+    if (!run())
+        return false;
     return true;
 }

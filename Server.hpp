@@ -5,8 +5,9 @@
 #include <netdb.h>
 #include <string>
 #include <sys/epoll.h>
-#include <ctime>
 
+// TODO: REMOVE ONCE FINISHED TESTING
+#include <ctime>
 #define DEBUG 1
 
 class Server

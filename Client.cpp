@@ -33,7 +33,6 @@ bool Client::has_full_header(const char *data, size_t len)
     return this->has_full_headers();
 }
 
-
 void Client::clear_request()
 {
     this->request_buffer.clear();
