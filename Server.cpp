@@ -56,7 +56,7 @@ bool Server::bind_socket()
     const char *host = this->address.c_str();
     int err;
 
-    hints = {};
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
@@ -73,7 +73,7 @@ bool Server::bind_socket()
         return (false);
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
-    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n ";
+    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n";
     freeaddrinfo(res);
     return (true);
 }
@@ -85,13 +85,16 @@ bool Server::listen_socket()
         std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n ";
+    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n";
     return (true);
 }
 
 // CLEANUP SERVER
 Server::~Server()
 {
+    // CLOSE EPOLL FD
+    if (this->epoll_fd != -1)
+        close(this->epoll_fd);
     // CLOSE SERVER FD
     if (this->fd != -1)
         close(this->fd);
@@ -145,7 +148,32 @@ void Server::close_all_clients()
 
 bool Server::handle_client_read(int client_fd)
 {
-    return (true);
+    std::map<int, Client>::iterator it = this->clients.find(client_fd);
+    if (it == this->clients.end())
+        return false;
+
+    Client &client = it->second; // client è un riferimento al Client dentro la map, quindi quando fai append modifichi davvero quel client.
+    char temp[4096];
+
+    ssize_t bytes_read = recv(client_fd, temp, sizeof(temp), 0);
+
+    if (bytes_read <= 0)
+    {
+        std::cout << "recv failed and/or Client disconnected: " << client_fd << std::endl;
+        return false;
+    }
+
+    if (!client.has_full_header(temp, bytes_read))
+        return true;
+    // DEBUG
+    std::cout << "Client " << client_fd << " read " << bytes_read << " bytes" << std::endl;
+    std::cout << "Request: " << client.get_request() << std::endl;
+
+
+    // 1. preparare response provvisoria
+    // 2. salvarla nel Client
+    // 3. modificare epoll da EPOLLIN a EPOLLOUT
+    return true;
 }
 
 bool Server::run()
@@ -153,7 +181,8 @@ bool Server::run()
     const int max_events = 1024;
     int client_fd;
 
-    this->epoll_fd = epoll_create1(0); // oggetto del kernel che serve a monitorare altri fd.
+    // TODO: CHECK IF epoll_create1 is allowed
+    this->epoll_fd = epoll_create(1); // oggetto del kernel che serve a monitorare altri fd.
     if (this->epoll_fd == -1)
     {
         std::cerr << "Error: epoll_create1 failed: " << strerror(errno) << std::endl;
@@ -161,16 +190,18 @@ bool Server::run()
     }
     // Aggiungo il server alla lista fd di epoll
     if (!add_epoll_fd(this->fd, EPOLLIN))
-    {
-        close(this->epoll_fd);
-        this->epoll_fd = -1;
         return false;
-    }
     this->running = true;
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
+    // DEBUG: remove after testing
+    time_t start = time(NULL);
     while (this->running)
     {
+        // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
+        if ((DEBUG) && (time(NULL) - start >= 5))
+            this->running = false;
+
         int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
         {
@@ -178,21 +209,17 @@ bool Server::run()
                 continue;
             std::cerr << "Error: epoll_wait failed: " << strerror(errno) << std::endl;
             close_all_clients();
-            close(this->epoll_fd);
-            this->epoll_fd = -1;
             return false;
         }
-        for (int i = 0; i < ready; ++i)
         // Con epoll scorro solo gli eventi pronti.
+        for (int i = 0; i < ready; ++i)
         {
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events; // revents contiene cosa è successo:
             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
             {
-                std::cerr << "Error: server socket epoll event failed\n";
+                std::cerr << "Error: server socket epoll event failed" << std::endl;
                 close_all_clients();
-                close(this->epoll_fd);
-                this->epoll_fd = -1;
                 return false;
             }
             if (current_fd != this->fd && (revents & (EPOLLERR | EPOLLHUP)))
@@ -237,8 +264,6 @@ bool Server::run()
         }
     }
     close_all_clients();
-    close(this->epoll_fd);
-    this->epoll_fd = -1;
     return true;
 }
 
@@ -252,6 +277,7 @@ bool Server::start(const char *conf_file)
         return false;
     if (!set_nonblocking(fd))
         return false;
+
     opt = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
     {
@@ -259,11 +285,12 @@ bool Server::start(const char *conf_file)
         return false;
     }
     std::cout << "Success: Reuse address socket option enabled" << std::endl;
+
     if (!bind_socket())
         return false;
     if (!listen_socket())
         return false;
-    // if  (!run())
-    //     return false;
+    if (!run())
+        return false;
     return true;
 }

@@ -15,4 +15,5 @@ int main(int argc, char **argv)
         // RETURNS AND CALLS THE DECONSTRUCTOR THAT CLEANS UP
         return 1;
     }
+    return 0;
 }

@@ -6,6 +6,10 @@
 #include <string>
 #include <sys/epoll.h>
 
+// TODO: REMOVE ONCE FINISHED TESTING
+#include <ctime>
+#define DEBUG 1
+
 class Server
 {
   public:

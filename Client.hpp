@@ -7,18 +7,23 @@ class Client
   public:
     Client(int fd);
     Client();
-    Client(const Client &other);
     ~Client();
-
-    Client &operator=(const Client &other);
 
     int get_fd() const;
     void set_fd(int fd);
 
-    void append_request(const char *data, size_t len);
+    bool has_full_header(const char *data, size_t len);
     const std::string &get_request() const;
+    bool has_full_headers() const;
+    void clear_request();
+    bool prepare_response(std::string response);
 
   private:
-    int fd;
-    std::string buffer;
+    int client_fd;
+    std::string request_buffer;
+    std::string method;
+    std::string path;
+    std::string version;
+    std::string response_buffer;
+    size_t _bytes_sent;
 };
