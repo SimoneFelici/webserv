@@ -182,7 +182,7 @@ bool Server::run()
     int client_fd;
 
     // TODO: CHECK IF epoll_create1 is allowed
-    this->epoll_fd = epoll_create1(0); // oggetto del kernel che serve a monitorare altri fd.
+    this->epoll_fd = epoll_create(1); // oggetto del kernel che serve a monitorare altri fd.
     if (this->epoll_fd == -1)
     {
         std::cerr << "Error: epoll_create1 failed: " << strerror(errno) << std::endl;
