@@ -73,7 +73,7 @@ bool Server::bind_socket()
         return (false);
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
-    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n ";
+    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n";
     freeaddrinfo(res);
     return (true);
 }
@@ -85,7 +85,7 @@ bool Server::listen_socket()
         std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n ";
+    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n";
     return (true);
 }
 
