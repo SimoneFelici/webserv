@@ -36,6 +36,7 @@ bool Server::parse_config(const char *conf_file)
     return (true);
 }
 
+
 // SOCKET
 bool Server::create_socket()
 {
@@ -89,6 +90,7 @@ bool Server::listen_socket()
     return (true);
 }
 
+
 // CLEANUP SERVER
 Server::~Server()
 {
@@ -100,10 +102,21 @@ Server::~Server()
         close(this->fd);
 }
 
-// SERVER
-Server::Server()
-    : fd(-1), port(), address(), max_conn(0), running(false), epoll_fd(-1)
+// EPOLL
+bool Server::setup_epoll()
 {
+    this->epoll_fd = epoll_create(1);
+    if (this->epoll_fd == -1)
+    {
+        std::cerr << "Error: epoll_create failed: "
+                  << strerror(errno) << std::endl;
+        return false;
+    }
+
+    if (!add_epoll_fd(this->fd, EPOLLIN))
+        return false;
+
+    return true;
 }
 
 bool Server::add_epoll_fd(int fd, uint32_t events)
@@ -121,6 +134,8 @@ bool Server::add_epoll_fd(int fd, uint32_t events)
     return (true);
 }
 
+
+// CLIENT
 bool Server::accept_client(int client_fd)
 {
     if (!set_nonblocking(client_fd))
@@ -176,21 +191,18 @@ bool Server::handle_client_read(int client_fd)
     return true;
 }
 
+
+// SERVER
+Server::Server()
+    : fd(-1), port(), address(), max_conn(0), running(false), epoll_fd(-1)
+{
+}
+
 bool Server::run()
 {
     const int max_events = 1024;
     int client_fd;
 
-    // TODO: CHECK IF epoll_create1 is allowed
-    this->epoll_fd = epoll_create(1); // oggetto del kernel che serve a monitorare altri fd.
-    if (this->epoll_fd == -1)
-    {
-        std::cerr << "Error: epoll_create1 failed: " << strerror(errno) << std::endl;
-        return false;
-    }
-    // Aggiungo il server alla lista fd di epoll
-    if (!add_epoll_fd(this->fd, EPOLLIN))
-        return false;
     this->running = true;
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
@@ -267,7 +279,7 @@ bool Server::run()
     return true;
 }
 
-bool Server::start(const char *conf_file)
+bool Server::setup(const char *conf_file)
 {
     int opt;
 
@@ -279,18 +291,18 @@ bool Server::start(const char *conf_file)
         return false;
 
     opt = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
         std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
         return false;
     }
-    std::cout << "Success: Reuse address socket option enabled" << std::endl;
 
     if (!bind_socket())
         return false;
     if (!listen_socket())
         return false;
-    if (!run())
+    if (!setup_epoll())
         return false;
+
     return true;
 }

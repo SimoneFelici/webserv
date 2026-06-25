@@ -10,10 +10,8 @@ int main(int argc, char **argv)
     }
     Server server;
 
-    if (!server.start(argv[1]))
-    {
-        // RETURNS AND CALLS THE DECONSTRUCTOR THAT CLEANS UP
+    if (!server.setup(argv[1]))
         return 1;
-    }
-    return 0;
+    if (!server.run())
+        return 1;
 }
