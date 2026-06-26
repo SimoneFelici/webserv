@@ -34,9 +34,11 @@ class Server
 
     bool setup_epoll();
     bool add_epoll_fd(int fd, uint32_t events);
+    bool modify_epoll_fd(int fd, uint32_t events);
     bool accept_client(int client_fd);
     void close_client(int client_fd);
     bool handle_client_read(int client_fd);
+    bool handle_client_write(int client_fd);
     void close_all_clients();
 
     int fd;
