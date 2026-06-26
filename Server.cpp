@@ -108,8 +108,7 @@ bool Server::setup_epoll()
     this->epoll_fd = epoll_create(1);
     if (this->epoll_fd == -1)
     {
-        std::cerr << "Error: epoll_create failed: "
-                  << strerror(errno) << std::endl;
+        std::cerr << "Error: epoll_create failed: " << strerror(errno) << std::endl;
         return false;
     }
 
@@ -127,8 +126,7 @@ bool Server::add_epoll_fd(int fd, uint32_t events)
     event.data.fd = fd;
     if (epoll_ctl(this->epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1)
     {
-        std::cerr << "Error: epoll_ctl ADD failed: " << strerror(errno)
-                  << std::endl;
+        std::cerr << "Error: epoll_ctl ADD failed: " << strerror(errno) << std::endl;
         return (false);
     }
     return (true);
@@ -296,6 +294,7 @@ bool Server::setup(const char *conf_file)
         std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
         return false;
     }
+    std::cout << "Success: Reuse address socket option enabled" << '\n';
 
     if (!bind_socket())
         return false;
