@@ -16,7 +16,8 @@ class Server
     Server();
     ~Server();
 
-    bool start(const char *conf_file);
+    bool setup(const char *conf_file);
+    bool run();
 
   private:
     Server(const Server &other);
@@ -25,13 +26,13 @@ class Server
     bool create_socket();
     bool bind_socket();
     bool listen_socket();
-    bool run();
 
     bool parse_config(const char *conf_file);
     void set_port(std::string parsed_port);
     void set_address(std::string parsed_address);
     void set_max_conn(int parsed_max);
 
+    bool setup_epoll();
     bool add_epoll_fd(int fd, uint32_t events);
     bool accept_client(int client_fd);
     void close_client(int client_fd);
