@@ -36,7 +36,6 @@ bool Server::parse_config(const char *conf_file)
     return (true);
 }
 
-
 // SOCKET
 bool Server::create_socket()
 {
@@ -90,7 +89,6 @@ bool Server::listen_socket()
     return (true);
 }
 
-
 // CLEANUP SERVER
 Server::~Server()
 {
@@ -132,6 +130,19 @@ bool Server::add_epoll_fd(int fd, uint32_t events)
     return (true);
 }
 
+bool Server::modify_epoll_fd(int fd, uint32_t events)
+{
+    epoll_event event;
+
+    event.events = events;
+    event.data.fd = fd;
+    if (epoll_ctl(this->epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1)
+    {
+        std::cerr << "Error: epoll_ctl modify failed: " << strerror(errno) << std::endl;
+        return false;
+    }
+    return true;
+}
 
 // CLIENT
 bool Server::accept_client(int client_fd)
@@ -176,19 +187,42 @@ bool Server::handle_client_read(int client_fd)
         return false;
     }
 
-    if (!client.has_full_header(temp, bytes_read))
+    if (!client.has_full_headers(temp, bytes_read))
         return true;
-    // DEBUG
-    std::cout << "Client " << client_fd << " read " << bytes_read << " bytes" << std::endl;
-    std::cout << "Request: " << client.get_request() << std::endl;
+    if (!client.parse_request())
+    {
+        std::cout << "[DEBUG] parse_request returned false" << std::endl;
+        return false;
+    }
+    if (client.req_done())
+    {
+        if (DEBUG)
+            client.print_request();
 
+        // TODO: PREPARE RESPONSE
+        if (!modify_epoll_fd(client_fd, EPOLLOUT))
+            return false;
+    }
 
-    // 1. preparare response provvisoria
-    // 2. salvarla nel Client
-    // 3. modificare epoll da EPOLLIN a EPOLLOUT
     return true;
 }
 
+bool Server::handle_client_write(int client_fd)
+{
+    std::map<int, Client>::iterator it = this->clients.find(client_fd);
+    if (it == this->clients.end())
+        return false;
+
+    Client &client = it->second;
+    // TODO: SEND ACTUAL RESPONSE INSTEAD OF PLACEHOLDER
+    std::string response = "HTTP/1.0 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
+    send(client_fd, response.c_str(), response.size(), 0);
+
+    // INFO: SINCE WE CLOSE THE CLIENT IMMEDIATLY AFTER REPLYING THIS IS NOT USEFULT BUT IT SHOULD BE USED WHEN REPLYING NORMALLY
+    client.clear_request();
+    close_client(client_fd);
+    return true;
+}
 
 // SERVER
 Server::Server()
@@ -267,7 +301,8 @@ bool Server::run()
             {
                 if (current_fd != this->fd)
                 {
-                    // if (!handle_client_write(current_fd))
+                    if (!handle_client_write(current_fd))
+                        close_client(current_fd);
                     continue;
                 }
             }
