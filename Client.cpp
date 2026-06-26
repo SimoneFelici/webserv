@@ -26,6 +26,7 @@ void Client::print_request() const
 {
     std::cout << "Method: " << req.method << std::endl;
     std::cout << "Path: " << req.path << std::endl;
+    std::cout << "Version: " << req.version << std::endl;
     for (std::map<std::string, std::string>::const_iterator it = req.headers.begin(); it != req.headers.end(); ++it)
         std::cout << it->first << ": " << it->second << std::endl;
     if (!req.body.empty())
@@ -59,8 +60,10 @@ bool Client::parse_request_line(std::size_t &pos)
     std::string line = this->request_buffer.substr(0, end);
     size_t first_space = line.find(' ');
     size_t second_space = line.find(' ', first_space + 1);
+
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
+    req.version = line.substr(second_space + 1, '\r');
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
     return true;
@@ -94,7 +97,7 @@ bool Client::parse_body(std::size_t &pos)
         size_t content_length = std::atoi(req.headers["Content-Length"].c_str());
         size_t available = this->request_buffer.size() - pos;
         if (available < content_length)
-            return true; // incompleto, aspetta altri dati
+            return true;
         req.body = this->request_buffer.substr(pos, content_length);
         pos += content_length;
     }
