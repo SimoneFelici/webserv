@@ -190,16 +190,13 @@ bool Server::handle_client_read(int client_fd)
     if (!client.has_full_headers(temp, bytes_read))
         return true;
     if (!client.parse_request())
-    {
-        std::cout << "[DEBUG] parse_request returned false" << std::endl;
         return false;
-    }
     if (client.req_done())
     {
         if (DEBUG)
             client.print_request();
 
-        // TODO: PREPARE RESPONSE
+        // TODO: PREPARE RESPONSE TO SEND
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }
