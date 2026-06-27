@@ -42,9 +42,9 @@ bool Client::has_full_headers(const char *data, size_t len)
 void Client::clear_request()
 {
     this->request_buffer.clear();
-    this->response_buffer.clear();
-    this->bytes_sent = 0;
     this->req = HttpRequest();
+    // this->response_buffer.clear(); // deve gestirli la clear responpse senno è "sporco"
+    // this->bytes_sent = 0;
 }
 
 bool Client::req_done() const
@@ -63,9 +63,10 @@ bool Client::parse_request_line(std::size_t &pos)
 
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
-    // Qui non è proprio corretto. Il secondo parametro di substr è una lunghezza, non “fino a \r”. 
-    //Siccome line è già senza \r\n, basta: req.version = line.substr(second_space + 1);
-    req.version = line.substr(second_space + 1, '\r');
+    // Qui non è proprio corretto. Il secondo parametro di substr è una lunghezza, non “fino a \r”.
+    // Siccome line è già senza \r\n, basta: req.version = line.substr(second_space + 1);
+    //req.version = line.substr(second_space + 1, '\r');
+    req.version = line.substr(second_space + 1);
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
     return true;
@@ -131,7 +132,7 @@ bool Client::parse_request()
     return false;
 }
 
-const std::string &Client::get_method() const 
+const std::string &Client::get_method() const
 {
     return this->req.method;
 }
@@ -151,10 +152,57 @@ const std::string &Client::get_body() const
     return this->req.body;
 }
 
-const std::string &Client::get_header(const std::string &key) const
+std::string Client::get_header(const std::string &key) const
 {
     std::map<std::string, std::string>::const_iterator it = this->req.headers.find(key);
-    if (it == his->req.headers.end())
+    if (it == this->req.headers.end())
         return "";
     return it->second;
 }
+
+const std::string &Client::get_response() const
+{
+    return this->response_buffer;
+}
+
+std::size_t Client::get_bytes_sent() const
+{
+    return this->bytes_sent;
+}
+
+void Client::add_bytes_sent(std::size_t bytes)
+{
+    this->bytes_sent += bytes;
+}
+
+bool Client::clear_response()
+{
+    if (this->bytes_sent < this->response_buffer.size())
+        return false;
+
+    this->response_buffer.clear();
+    this->bytes_sent = 0;
+    return true;
+}
+
+bool Client::prepare_response()
+{
+    if (!this->clear_response())
+        return false;
+
+    std::string body = "<html><body><h1>Hello webserv</h1></body></html>";
+
+    std::stringstream ss;
+    ss << "HTTP/1.1 200 OK\r\n";
+    ss << "Content-Type: text/html\r\n";
+    ss << "Content-Length: " << body.size() << "\r\n";
+    ss << "Connection: close\r\n";
+    ss << "\r\n";
+    ss << body;
+
+    this->response_buffer = ss.str(); // ss.str() restituisce tutto il contenuto accumulato come std::string.
+    this->bytes_sent = 0;
+
+    return true;
+}
+

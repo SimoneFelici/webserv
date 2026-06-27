@@ -195,8 +195,10 @@ bool Server::handle_client_read(int client_fd)
     {
         if (DEBUG)
             client.print_request();
-
-        // TODO: PREPARE RESPONSE TO SEND
+        
+        if (!client.prepare_response())
+            return false;
+        
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }
@@ -211,13 +213,25 @@ bool Server::handle_client_write(int client_fd)
         return false;
 
     Client &client = it->second;
-    // TODO: SEND ACTUAL RESPONSE INSTEAD OF PLACEHOLDER
-    std::string response = "HTTP/1.0 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
-    send(client_fd, response.c_str(), response.size(), 0);
+    
+    const std::string &response = client.get_response();
+    
+    std::size_t bytes_sent = client.get_bytes_sent();
+    if (bytes_sent > response.size())
+        return false;
+    std::size_t bytes_left = response.size() - bytes_sent;
 
-    // INFO: SINCE WE CLOSE THE CLIENT IMMEDIATLY AFTER REPLYING THIS IS NOT USEFULT BUT IT SHOULD BE USED WHEN REPLYING NORMALLY
-    client.clear_request();
-    close_client(client_fd);
+    /*
+    response.c_str() + bytes_sent : vuol dire: parti dal punto in cui eri rimasta.
+    response.size() - bytes_sent : manda solo quello che manca */
+    ssize_t sent = send(client_fd, response.c_str() + bytes_sent, bytes_left, 0);
+    if (sent <= 0)
+        return false;
+
+    client.add_bytes_sent(sent); // aggiorno quanti byte sono stati davvero mandati.
+
+    if (client.clear_response()) // torna true se la risposta è stata mandata tutta 
+        close_client(client_fd);
     return true;
 }
 
