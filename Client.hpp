@@ -25,6 +25,12 @@ class Client
     bool parse_request();
     bool req_done() const;
 
+    // Getters
+    const std::string &get_path() const;
+    const std::string &get_version() const;
+    const std::string &get_body() const;
+    std::string get_header(const std::string &key) const;
+
   private:
     struct HttpRequest
     {
