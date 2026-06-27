@@ -63,9 +63,6 @@ bool Client::parse_request_line(std::size_t &pos)
 
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
-    // Qui non è proprio corretto. Il secondo parametro di substr è una lunghezza, non “fino a \r”.
-    // Siccome line è già senza \r\n, basta: req.version = line.substr(second_space + 1);
-    //req.version = line.substr(second_space + 1, '\r');
     req.version = line.substr(second_space + 1);
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
@@ -205,4 +202,3 @@ bool Client::prepare_response()
 
     return true;
 }
-
