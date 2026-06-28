@@ -6,6 +6,8 @@
 #include <string>
 #include <sstream>
 
+struct ServerConfig;
+
 class Client
 {
   public:
@@ -35,7 +37,7 @@ class Client
 
     //Response
     bool clear_response();
-    bool prepare_response(); 
+    bool prepare_response(ServerConfig& config); 
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);

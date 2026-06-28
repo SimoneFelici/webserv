@@ -32,6 +32,9 @@ bool Server::parse_config(const char *conf_file)
     // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO
     // SOMAXCON
     set_max_conn(MAX_CONN);
+    // Da decidere cosa fare 
+    this->config.root = "./www";
+    this->config.index = "index.html";
     close(conf_fd);
     return (true);
 }
@@ -196,7 +199,7 @@ bool Server::handle_client_read(int client_fd)
         if (DEBUG)
             client.print_request();
         
-        if (!client.prepare_response())
+        if (!client.prepare_response(this->config))
             return false;
         
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
@@ -250,12 +253,12 @@ bool Server::run()
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
     // DEBUG: remove after testing
-    time_t start = time(NULL);
+    // time_t start = time(NULL);
     while (this->running)
     {
         // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
-        if ((DEBUG) && (time(NULL) - start >= 5))
-            this->running = false;
+        // if ((DEBUG) && (time(NULL) - start >= 5))
+        //     this->running = false;
 
         int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
@@ -266,7 +269,6 @@ bool Server::run()
             close_all_clients();
             return false;
         }
-        // Con epoll scorro solo gli eventi pronti.
         for (int i = 0; i < ready; ++i)
         {
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.

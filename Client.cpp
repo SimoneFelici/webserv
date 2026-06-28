@@ -1,4 +1,6 @@
 #include "Client.hpp"
+#include "Server.hpp"
+#include "webserv.hpp"
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
 
@@ -63,9 +65,6 @@ bool Client::parse_request_line(std::size_t &pos)
 
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
-    // Qui non è proprio corretto. Il secondo parametro di substr è una lunghezza, non “fino a \r”.
-    // Siccome line è già senza \r\n, basta: req.version = line.substr(second_space + 1);
-    //req.version = line.substr(second_space + 1, '\r');
     req.version = line.substr(second_space + 1);
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
@@ -185,24 +184,39 @@ bool Client::clear_response()
     return true;
 }
 
-bool Client::prepare_response()
+bool Client::prepare_response(ServerConfig &config)
 {
     if (!this->clear_response())
         return false;
 
-    std::string body = "<html><body><h1>Hello webserv</h1></body></html>";
+    std::string body;
+    std::string file_path;
+    int status_code = 200;
+    std::string reason = "OK";
+
+    if (this->get_path() == "/")
+        file_path = config.root + "/" + config.index;
+    else
+        file_path = config.root + this->get_path();
+
+    if (!read_file(file_path, body))
+    {
+        status_code = 404;
+        reason = "Not Found";
+        body = "<html><body><h1>404 Not Found</h1></body></html>";
+    }
 
     std::stringstream ss;
-    ss << "HTTP/1.1 200 OK\r\n";
+
+    ss << "HTTP/1.1 " << status_code << " " << reason << "\r\n";
     ss << "Content-Type: text/html\r\n";
     ss << "Content-Length: " << body.size() << "\r\n";
     ss << "Connection: close\r\n";
     ss << "\r\n";
     ss << body;
 
-    this->response_buffer = ss.str(); // ss.str() restituisce tutto il contenuto accumulato come std::string.
+    this->response_buffer = ss.str();
     this->bytes_sent = 0;
 
     return true;
 }
-
