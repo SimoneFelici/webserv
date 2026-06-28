@@ -10,8 +10,8 @@
 
 // HARDCODED PARSED CONFIG
 #define PORT "8080"
-//#define ADDRESS "127.0.0.1"
-#define ADDRESS "0.0.0.0" // per docker
+#define ADDRESS "127.0.0.1"
+//#define ADDRESS "0.0.0.0" // per docker
 #define MAX_CONN SOMAXCONN
 
 bool set_nonblocking(int fd);
