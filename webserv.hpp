@@ -15,4 +15,4 @@
 #define MAX_CONN SOMAXCONN
 
 bool set_nonblocking(int fd);
-bool read_file(const std::string& file_path, std::string& body);
+int read_file(const std::string& file_path, std::string& body);

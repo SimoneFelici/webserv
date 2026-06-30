@@ -2,14 +2,14 @@
 #include "webserv.hpp"
 
 // PARSING
-void Server::set_port(std::string parsed_port) { this->port = parsed_port; }
+void Server::set_port(std::string parsed_port) { this->config.port = parsed_port; }
 
 void Server::set_address(std::string parsed_address)
 {
-    this->address = parsed_address;
+    this->config.address = parsed_address;
 }
 
-void Server::set_max_conn(int parsed_max) { this->max_conn = parsed_max; }
+void Server::set_max_conn(int parsed_max) { this->config.max_conn = parsed_max; }
 
 // TODO: READ CONFIG FILE AND PARSE REAL VALUES
 // TODO: BETTER OPEN ERROR LOGGING
@@ -56,14 +56,14 @@ bool Server::bind_socket()
 {
     struct addrinfo hints;
     struct addrinfo *res;
-    const char *host = this->address.c_str();
+    const char *host = this->config.address.c_str();
     int err;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
-    err = getaddrinfo(host, this->port.c_str(), &hints, &res);
+    err = getaddrinfo(host, this->config.port.c_str(), &hints, &res);
     if (err != 0)
     {
         std::cerr << "Error: getaddrinfo: " << gai_strerror(err) << std::endl;
@@ -76,19 +76,19 @@ bool Server::bind_socket()
         return (false);
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
-    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n";
+    std::cout << "Success: Address binded, Address: " << this->config.address << ", port : " << this->config.port << "\n";
     freeaddrinfo(res);
     return (true);
 }
 
 bool Server::listen_socket()
 {
-    if (listen(fd, this->max_conn) == -1)
+    if (listen(fd, this->config.max_conn) == -1)
     {
         std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n";
+    std::cout << "Success: Socket listening, max connections : " << this->config.max_conn << "\n";
     return (true);
 }
 

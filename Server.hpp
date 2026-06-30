@@ -14,6 +14,9 @@ struct ServerConfig
 {
     std::string root;
     std::string index;
+    std::string port;
+    std::string address;
+    int max_conn;
 };
 
 class Server
@@ -48,11 +51,6 @@ class Server
     void close_all_clients();
 
     int fd;
-
-    // parse config
-    std::string port;
-    std::string address;
-    int max_conn;
 
     ServerConfig config;
 

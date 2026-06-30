@@ -42,6 +42,10 @@ class Client
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
 
+    // Methods
+    void build_error_response(int error_code, const std::string &message);
+    bool handle_get_req(ServerConfig &config);
+
   private:
     struct HttpRequest
     {
@@ -67,6 +71,7 @@ class Client
     struct HttpResponse
     {
         std::string version;
+        std::string content_type;
         int status_code;
         std::string reason;
         std::map<std::string, std::string> headers;
@@ -86,4 +91,5 @@ class Client
     bool parse_request_line(std::size_t &pos);
     bool parse_headers(std::size_t &pos);
     bool parse_body(std::size_t &pos);
+    void build_response_buffer();
 };

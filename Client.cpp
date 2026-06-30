@@ -183,40 +183,62 @@ bool Client::clear_response()
     this->bytes_sent = 0;
     return true;
 }
-
-bool Client::prepare_response(ServerConfig &config)
+void Client::build_response_buffer()
 {
-    if (!this->clear_response())
-        return false;
+    std::stringstream ss;
 
-    std::string body;
+    ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
+    ss << "Content-Type: " << this->res.content_type << "\r\n";
+    ss << "Content-Length: " << this->res.body.size() << "\r\n";
+    ss << "Connection: close\r\n";
+    ss << "\r\n";
+    ss << this->res.body;
+
+    this->response_buffer = ss.str();
+    this->bytes_sent = 0;
+}
+void Client::build_error_response(int error_code, const std::string &message)
+{
+    this->res.status_code = error_code;
+    this->res.reason = message;
+    this->res.content_type = "text/html";
+    this->res.body = "<html><body><h1>" + message + "</h1></body></html>";
+}
+
+bool Client::handle_get_req(ServerConfig &config){
+
     std::string file_path;
-    int status_code = 200;
-    std::string reason = "OK";
+    this->res.version = "HTTP/1.1";
+    this->res.reason = "OK";
+    this->res.content_type = "text/html";
 
     if (this->get_path() == "/")
         file_path = config.root + "/" + config.index;
     else
         file_path = config.root + this->get_path();
+    this->res.status_code = read_file(file_path, this->res.body);
+    if ( this->res.status_code != 200)
+        build_error_response(this->res.status_code, "Not Found");
+    
+    return true;
 
-    if (!read_file(file_path, body))
-    {
-        status_code = 404;
-        reason = "Not Found";
-        body = "<html><body><h1>404 Not Found</h1></body></html>";
-    }
+}
 
-    std::stringstream ss;
+bool Client::prepare_response(ServerConfig &config)
+{
+    if (!this->clear_response())
+        return false;
+    //QUI SI PUUO INSERIRE VALIDAZIONE
+    
+    if (this->get_method() == "GET")
+        handle_get_req(config);
+    // else if (this->get_method() == "POST")
+    //     handle_post(config);
+    // else if (this->get_method() == "DELETE")
+    //     handle_delete(config);
+    else
+        build_error_response(405, "Method Not Allowed");
 
-    ss << "HTTP/1.1 " << status_code << " " << reason << "\r\n";
-    ss << "Content-Type: text/html\r\n";
-    ss << "Content-Length: " << body.size() << "\r\n";
-    ss << "Connection: close\r\n";
-    ss << "\r\n";
-    ss << body;
-
-    this->response_buffer = ss.str();
-    this->bytes_sent = 0;
-
+    build_response_buffer();
     return true;
 }
