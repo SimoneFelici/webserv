@@ -1,4 +1,6 @@
 #include "Client.hpp"
+#include "Server.hpp"
+#include "webserv.hpp"
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
 
@@ -42,9 +44,9 @@ bool Client::has_full_headers(const char *data, size_t len)
 void Client::clear_request()
 {
     this->request_buffer.clear();
-    this->response_buffer.clear();
-    this->bytes_sent = 0;
     this->req = HttpRequest();
+    // this->response_buffer.clear(); // deve gestirli la clear responpse senno è "sporco"
+    // this->bytes_sent = 0;
 }
 
 bool Client::req_done() const
@@ -63,7 +65,7 @@ bool Client::parse_request_line(std::size_t &pos)
 
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
-    req.version = line.substr(second_space + 1, '\r');
+    req.version = line.substr(second_space + 1);
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
     return true;
@@ -127,4 +129,116 @@ bool Client::parse_request()
         }
     }
     return false;
+}
+
+const std::string &Client::get_method() const
+{
+    return this->req.method;
+}
+
+const std::string &Client::get_path() const
+{
+    return this->req.path;
+}
+
+const std::string &Client::get_version() const
+{
+    return this->req.version;
+}
+
+const std::string &Client::get_body() const
+{
+    return this->req.body;
+}
+
+std::string Client::get_header(const std::string &key) const
+{
+    std::map<std::string, std::string>::const_iterator it = this->req.headers.find(key);
+    if (it == this->req.headers.end())
+        return "";
+    return it->second;
+}
+
+const std::string &Client::get_response() const
+{
+    return this->response_buffer;
+}
+
+std::size_t Client::get_bytes_sent() const
+{
+    return this->bytes_sent;
+}
+
+void Client::add_bytes_sent(std::size_t bytes)
+{
+    this->bytes_sent += bytes;
+}
+
+bool Client::clear_response()
+{
+    if (this->bytes_sent < this->response_buffer.size())
+        return false;
+
+    this->response_buffer.clear();
+    this->bytes_sent = 0;
+    return true;
+}
+void Client::build_response_buffer()
+{
+    std::stringstream ss;
+
+    ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
+    ss << "Content-Type: " << this->res.content_type << "\r\n";
+    ss << "Content-Length: " << this->res.body.size() << "\r\n";
+    ss << "Connection: close\r\n";
+    ss << "\r\n";
+    ss << this->res.body;
+
+    this->response_buffer = ss.str();
+    this->bytes_sent = 0;
+}
+void Client::build_error_response(int error_code, const std::string &message)
+{
+    this->res.status_code = error_code;
+    this->res.reason = message;
+    this->res.content_type = "text/html";
+    this->res.body = "<html><body><h1>" + message + "</h1></body></html>";
+}
+
+bool Client::handle_get_req(ServerConfig &config){
+
+    std::string file_path;
+    this->res.version = "HTTP/1.1";
+    this->res.reason = "OK";
+    this->res.content_type = "text/html";
+
+    if (this->get_path() == "/")
+        file_path = config.root + "/" + config.index;
+    else
+        file_path = config.root + this->get_path();
+    this->res.status_code = read_file(file_path, this->res.body);
+    if ( this->res.status_code != 200)
+        build_error_response(this->res.status_code, "Not Found");
+    
+    return true;
+
+}
+
+bool Client::prepare_response(ServerConfig &config)
+{
+    if (!this->clear_response())
+        return false;
+    //QUI SI PUUO INSERIRE VALIDAZIONE
+    
+    if (this->get_method() == "GET")
+        handle_get_req(config);
+    // else if (this->get_method() == "POST")
+    //     handle_post(config);
+    // else if (this->get_method() == "DELETE")
+    //     handle_delete(config);
+    else
+        build_error_response(405, "Method Not Allowed");
+
+    build_response_buffer();
+    return true;
 }

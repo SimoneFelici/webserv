@@ -109,69 +109,6 @@ se ricevi byte, li aggiungi al buffer del client;
 se ricevi 0, il client se n’è andato: va chiuso;
 se ricevi errore, per ora chiudi il client.
 
-### Ma la richiesta HTTP arriva tutta insieme?
-Può arrivare tutta insieme, ma non devi mai darlo per scontato. Come si gestisce se arriva a pezzi?
-
-### Come capiamo se la richiesta HTTP è completa?
-
-
-
-
-
-
-
-
-
-
----
-# MODIFICHE DI OGGI:
-- sistemato il distruttore del Server aggiungendo chiusura fd epoll e sistemata anche run()
-- aggiunte alla classe client
-
-- logica di handle_client_read(client_fd)
-```
-
-1. cerca client_fd dentro clients
-   se non esiste:
-       return false
-
-2. crea un buffer temporaneo, tipo char temp[4096]
-
-3. chiama recv(client_fd, temp, sizeof(temp), 0)
-
-4. se recv ritorna 0:
-       return false
-
-5. se recv ritorna < 0:
-       return false
-
-6. se recv ritorna > 0:
-       aggiungi quei byte al request_buffer del Client -> da implementare nel client
-
-7. controlla il request_buffer:  -> implementerei anche questo a seconda della risposta del client
-       contiene "\r\n\r\n"?
-           no:
-               return true
-
-           sì:
-               prepara response provvisoria nel Client
-               modifica epoll: da EPOLLIN a EPOLLOUT
-               return true
-```
-
-EPOLLIN  -> handle_client_read()
-         -> request completa
-         -> client.set_response(...)
-         -> epoll_ctl: passa a EPOLLOUT
-
-EPOLLOUT -> handle_client_write()
-         -> send(response)
-         -> se response completa:
-              close(fd)
-              clients.erase(fd)
-              epoll_ctl DEL
-
-
 # HTTP request 
 
 ```

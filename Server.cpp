@@ -2,14 +2,14 @@
 #include "webserv.hpp"
 
 // PARSING
-void Server::set_port(std::string parsed_port) { this->port = parsed_port; }
+void Server::set_port(std::string parsed_port) { this->config.port = parsed_port; }
 
 void Server::set_address(std::string parsed_address)
 {
-    this->address = parsed_address;
+    this->config.address = parsed_address;
 }
 
-void Server::set_max_conn(int parsed_max) { this->max_conn = parsed_max; }
+void Server::set_max_conn(int parsed_max) { this->config.max_conn = parsed_max; }
 
 // TODO: READ CONFIG FILE AND PARSE REAL VALUES
 // TODO: BETTER OPEN ERROR LOGGING
@@ -32,6 +32,9 @@ bool Server::parse_config(const char *conf_file)
     // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO
     // SOMAXCON
     set_max_conn(MAX_CONN);
+    // Da decidere cosa fare 
+    this->config.root = "./www";
+    this->config.index = "index.html";
     close(conf_fd);
     return (true);
 }
@@ -53,14 +56,14 @@ bool Server::bind_socket()
 {
     struct addrinfo hints;
     struct addrinfo *res;
-    const char *host = this->address.c_str();
+    const char *host = this->config.address.c_str();
     int err;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
-    err = getaddrinfo(host, this->port.c_str(), &hints, &res);
+    err = getaddrinfo(host, this->config.port.c_str(), &hints, &res);
     if (err != 0)
     {
         std::cerr << "Error: getaddrinfo: " << gai_strerror(err) << std::endl;
@@ -73,19 +76,19 @@ bool Server::bind_socket()
         return (false);
     }
     // TODO: MAYBE USE ADDRINFO ADDRES AND TRANSLATE IT?
-    std::cout << "Success: Address binded, Address: " << this->address << ", port : " << this->port << "\n";
+    std::cout << "Success: Address binded, Address: " << this->config.address << ", port : " << this->config.port << "\n";
     freeaddrinfo(res);
     return (true);
 }
 
 bool Server::listen_socket()
 {
-    if (listen(fd, this->max_conn) == -1)
+    if (listen(fd, this->config.max_conn) == -1)
     {
         std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
         return (false);
     }
-    std::cout << "Success: Socket listening, max connections : " << this->max_conn << "\n";
+    std::cout << "Success: Socket listening, max connections : " << this->config.max_conn << "\n";
     return (true);
 }
 
@@ -195,8 +198,10 @@ bool Server::handle_client_read(int client_fd)
     {
         if (DEBUG)
             client.print_request();
-
-        // TODO: PREPARE RESPONSE TO SEND
+        
+        if (!client.prepare_response(this->config))
+            return false;
+        
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }
@@ -211,13 +216,25 @@ bool Server::handle_client_write(int client_fd)
         return false;
 
     Client &client = it->second;
-    // TODO: SEND ACTUAL RESPONSE INSTEAD OF PLACEHOLDER
-    std::string response = "HTTP/1.0 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
-    send(client_fd, response.c_str(), response.size(), 0);
+    
+    const std::string &response = client.get_response();
+    
+    std::size_t bytes_sent = client.get_bytes_sent();
+    if (bytes_sent > response.size())
+        return false;
+    std::size_t bytes_left = response.size() - bytes_sent;
 
-    // INFO: SINCE WE CLOSE THE CLIENT IMMEDIATLY AFTER REPLYING THIS IS NOT USEFULT BUT IT SHOULD BE USED WHEN REPLYING NORMALLY
-    client.clear_request();
-    close_client(client_fd);
+    /*
+    response.c_str() + bytes_sent : vuol dire: parti dal punto in cui eri rimasta.
+    response.size() - bytes_sent : manda solo quello che manca */
+    ssize_t sent = send(client_fd, response.c_str() + bytes_sent, bytes_left, 0);
+    if (sent <= 0)
+        return false;
+
+    client.add_bytes_sent(sent); // aggiorno quanti byte sono stati davvero mandati.
+
+    if (client.clear_response()) // torna true se la risposta è stata mandata tutta 
+        close_client(client_fd);
     return true;
 }
 
@@ -236,12 +253,12 @@ bool Server::run()
     epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
 
     // DEBUG: remove after testing
-    time_t start = time(NULL);
+    // time_t start = time(NULL);
     while (this->running)
     {
         // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
-        if ((DEBUG) && (time(NULL) - start >= 5))
-            this->running = false;
+        // if ((DEBUG) && (time(NULL) - start >= 5))
+        //     this->running = false;
 
         int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
@@ -252,7 +269,6 @@ bool Server::run()
             close_all_clients();
             return false;
         }
-        // Con epoll scorro solo gli eventi pronti.
         for (int i = 0; i < ready; ++i)
         {
             int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.

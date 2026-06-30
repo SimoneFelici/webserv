@@ -4,6 +4,9 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <sstream>
+
+struct ServerConfig;
 
 class Client
 {
@@ -24,6 +27,24 @@ class Client
 
     bool parse_request();
     bool req_done() const;
+
+    // Getters
+    const std::string &get_method() const;
+    const std::string &get_path() const;
+    const std::string &get_version() const;
+    const std::string &get_body() const;
+    std::string get_header(const std::string &key) const;
+
+    //Response
+    bool clear_response();
+    bool prepare_response(ServerConfig& config); 
+    const std::string &get_response() const;
+    std::size_t get_bytes_sent() const;
+    void add_bytes_sent(std::size_t bytes);
+
+    // Methods
+    void build_error_response(int error_code, const std::string &message);
+    bool handle_get_req(ServerConfig &config);
 
   private:
     struct HttpRequest
@@ -50,6 +71,7 @@ class Client
     struct HttpResponse
     {
         std::string version;
+        std::string content_type;
         int status_code;
         std::string reason;
         std::map<std::string, std::string> headers;
@@ -64,8 +86,10 @@ class Client
     std::size_t bytes_sent;
 
     HttpRequest req;
+    HttpResponse res;
 
     bool parse_request_line(std::size_t &pos);
     bool parse_headers(std::size_t &pos);
     bool parse_body(std::size_t &pos);
+    void build_response_buffer();
 };

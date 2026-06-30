@@ -10,6 +10,15 @@
 #include <ctime>
 #define DEBUG 1
 
+struct ServerConfig
+{
+    std::string root;
+    std::string index;
+    std::string port;
+    std::string address;
+    int max_conn;
+};
+
 class Server
 {
   public:
@@ -42,9 +51,9 @@ class Server
     void close_all_clients();
 
     int fd;
-    std::string port;
-    std::string address;
-    int max_conn;
+
+    ServerConfig config;
+
     bool running;
 
     int epoll_fd;
