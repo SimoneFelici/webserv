@@ -200,24 +200,25 @@ void Client::build_response_buffer()
 }
 void Client::build_error_response(int error_code)
 {
-    std::string reason;
-    std::map<int, std::string> Errorcodes = {
-        {400, "Bad Request"},
-        {403, "Forbidden"},
-        {404, "Not Found"},
-        {405, "Method Not Allowed"},
-        {413, "Payload Too Large"},
-        {500, "Internal Server Error"}};
+    std::map<int, std::string> Errorcodes;
+    Errorcodes[400] = "Bad Request";
+    Errorcodes[403] = "Forbidden";
+    Errorcodes[404] = "Not Found";
+    Errorcodes[405] = "Method Not Allowed";
+    Errorcodes[413] = "Payload Too Large";
+    Errorcodes[500] = "Internal Server Error";
 
     std::map<int, std::string>::iterator it = Errorcodes.find(error_code);
-    if (it != Errorcodes.end())
-    {
-        reason = it->second;
-    }
-    else
+    std::string reason;
+
+    if (it == Errorcodes.end())
     {
         error_code = 500;
         reason = "Internal Server Error";
+    }
+    else
+    {
+        reason = it->second;
     }
 
     this->res.status_code = error_code;
