@@ -183,6 +183,7 @@ bool Client::clear_response()
     this->bytes_sent = 0;
     return true;
 }
+
 void Client::build_response_buffer()
 {
     std::stringstream ss;
@@ -198,6 +199,7 @@ void Client::build_response_buffer()
     this->response_buffer = ss.str();
     this->bytes_sent = 0;
 }
+
 void Client::build_error_response(int error_code)
 {
     std::string reason;
