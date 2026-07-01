@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <string>
 #include <sys/epoll.h>
+#include <vector>
 
 // TODO: REMOVE ONCE FINISHED TESTING
 #include <ctime>
