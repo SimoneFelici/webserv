@@ -198,8 +198,10 @@ void Client::build_response_buffer()
     this->response_buffer = ss.str();
     this->bytes_sent = 0;
 }
+
 void Client::build_error_response(int error_code)
 {
+    std::string reason;
     std::map<int, std::string> Errorcodes;
     Errorcodes[400] = "Bad Request";
     Errorcodes[403] = "Forbidden";
@@ -209,16 +211,14 @@ void Client::build_error_response(int error_code)
     Errorcodes[500] = "Internal Server Error";
 
     std::map<int, std::string>::iterator it = Errorcodes.find(error_code);
-    std::string reason;
-
-    if (it == Errorcodes.end())
+    if (it != Errorcodes.end())
     {
-        error_code = 500;
-        reason = "Internal Server Error";
+        reason = it->second;
     }
     else
     {
-        reason = it->second;
+        error_code = 500;
+        reason = "Internal Server Error";
     }
 
     this->res.status_code = error_code;
