@@ -187,6 +187,7 @@ void Client::build_response_buffer()
 {
     std::stringstream ss;
 
+    this->res.version = this->get_version(); // verrà gestito prima durante la validazione della request 
     ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
     ss << "Content-Type: " << this->res.content_type << "\r\n";
     ss << "Content-Length: " << this->res.body.size() << "\r\n";
@@ -197,18 +198,51 @@ void Client::build_response_buffer()
     this->response_buffer = ss.str();
     this->bytes_sent = 0;
 }
-void Client::build_error_response(int error_code, const std::string &message)
+void Client::build_error_response(int error_code)
 {
+    std::string message;
+
+    switch (error_code)
+    {
+    case 400:
+        message = "Bad Request";
+        break;
+    case 403:
+        message = "Forbidden";
+        break;
+    case 404:
+        message = "Not Found";
+        break;
+    case 405:
+        message = "Method Not Allowed";
+        break;
+    case 413:
+        message = "Payload Too Large";
+        break;
+    case 500:
+        message = "Internal Server Error";
+        break;
+    default:
+        error_code = 500;
+        message = "Internal Server Error";
+        break;
+    }
+
     this->res.status_code = error_code;
     this->res.reason = message;
     this->res.content_type = "text/html";
-    this->res.body = "<html><body><h1>" + message + "</h1></body></html>";
+
+    std::stringstream body;
+    body << "<html><body><h1>" << error_code << " " << message << "</h1></body></html>";
+
+    this->res.body = body.str();
 }
 
-bool Client::handle_get_req(ServerConfig &config){
+bool Client::handle_get_req(ServerConfig &config)
+{
 
     std::string file_path;
-    this->res.version = "HTTP/1.1";
+
     this->res.reason = "OK";
     this->res.content_type = "text/html";
 
@@ -217,19 +251,38 @@ bool Client::handle_get_req(ServerConfig &config){
     else
         file_path = config.root + this->get_path();
     this->res.status_code = read_file(file_path, this->res.body);
-    if ( this->res.status_code != 200)
-        build_error_response(this->res.status_code, "Not Found");
-    
+    if (this->res.status_code != 200)
+        build_error_response(this->res.status_code);
+
     return true;
+}
+
+bool Client::is_method_allowed(ServerConfig &config, std::string method)
+{
+    for (std::vector<std::string>::const_iterator it = config.allowed_methods.begin(); it != config.allowed_methods.end(); ++it)
+    {
+        if (*it == method)
+            return true;
+    }
+    for (std::vector<std::string>::const_iterator it = config.allowed_methods.begin(); it != config.allowed_methods.end(); ++it)
+    {
+        if (*it == method)
+            return true;
+    }
+
+    return false;
 
 }
 
 bool Client::prepare_response(ServerConfig &config)
 {
+    
     if (!this->clear_response())
         return false;
-    //QUI SI PUUO INSERIRE VALIDAZIONE
-    
+    // QUI SI PUUO INSERIRE VALIDAZIONE
+        if (!is_method_allowed(config, this->get_method()))
+            build_error_response(405);
+
     if (this->get_method() == "GET")
         handle_get_req(config);
     // else if (this->get_method() == "POST")
@@ -237,7 +290,7 @@ bool Client::prepare_response(ServerConfig &config)
     // else if (this->get_method() == "DELETE")
     //     handle_delete(config);
     else
-        build_error_response(405, "Method Not Allowed");
+        build_error_response(405);
 
     build_response_buffer();
     return true;

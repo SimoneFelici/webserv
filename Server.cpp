@@ -1,5 +1,8 @@
 #include "Server.hpp"
 #include "webserv.hpp"
+Server::Server() : fd(-1), running(false), epoll_fd(-1)
+{
+}
 
 // PARSING
 void Server::set_port(std::string parsed_port) { this->config.port = parsed_port; }
@@ -32,7 +35,7 @@ bool Server::parse_config(const char *conf_file)
     // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO
     // SOMAXCON
     set_max_conn(MAX_CONN);
-    // Da decidere cosa fare 
+    // Da decidere cosa fare
     this->config.root = "./www";
     this->config.index = "index.html";
     close(conf_fd);
@@ -198,10 +201,10 @@ bool Server::handle_client_read(int client_fd)
     {
         if (DEBUG)
             client.print_request();
-        
+
         if (!client.prepare_response(this->config))
             return false;
-        
+
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }
@@ -216,9 +219,9 @@ bool Server::handle_client_write(int client_fd)
         return false;
 
     Client &client = it->second;
-    
+
     const std::string &response = client.get_response();
-    
+
     std::size_t bytes_sent = client.get_bytes_sent();
     if (bytes_sent > response.size())
         return false;
@@ -233,15 +236,9 @@ bool Server::handle_client_write(int client_fd)
 
     client.add_bytes_sent(sent); // aggiorno quanti byte sono stati davvero mandati.
 
-    if (client.clear_response()) // torna true se la risposta è stata mandata tutta 
+    if (client.clear_response()) // torna true se la risposta è stata mandata tutta
         close_client(client_fd);
     return true;
-}
-
-// SERVER
-Server::Server()
-    : fd(-1), port(), address(), max_conn(0), running(false), epoll_fd(-1)
-{
 }
 
 bool Server::run()

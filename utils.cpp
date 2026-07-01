@@ -11,7 +11,7 @@ bool set_nonblocking(int fd)
     return true;
 }
 
-// da inserire check su i metodi consentiti per route 
+// da inserire check su i metodi consentiti per route e su i status code di ritorno 
 /*
 read_file() non deve tornare solo bool
 deve distinguere:
@@ -29,7 +29,7 @@ int read_file(const std::string& file_path, std::string& body)
 
     if (!S_ISREG(file_stat.st_mode)) //Questa è una macro. e st_mode contiene informazioni
         return (403);
-
+    
     int fd = open(file_path.c_str(), O_RDONLY);
     if (fd == -1)
         return (500);

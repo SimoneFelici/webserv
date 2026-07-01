@@ -43,7 +43,7 @@ class Client
     void add_bytes_sent(std::size_t bytes);
 
     // Methods
-    void build_error_response(int error_code, const std::string &message);
+    void build_error_response(int error_code);
     bool handle_get_req(ServerConfig &config);
 
   private:
@@ -92,4 +92,5 @@ class Client
     bool parse_headers(std::size_t &pos);
     bool parse_body(std::size_t &pos);
     void build_response_buffer();
+    bool is_method_allowed();
 };
