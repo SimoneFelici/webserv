@@ -187,7 +187,7 @@ void Client::build_response_buffer()
 {
     std::stringstream ss;
 
-    this->res.version = this->get_version(); // verrà gestito prima durante la validazione della request 
+    this->res.version = this->get_version(); // verrà gestito prima durante la validazione della request
     ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
     ss << "Content-Type: " << this->res.content_type << "\r\n";
     ss << "Content-Length: " << this->res.body.size() << "\r\n";
@@ -200,40 +200,32 @@ void Client::build_response_buffer()
 }
 void Client::build_error_response(int error_code)
 {
-    std::string message;
+    std::string reason;
+    std::map<int, std::string> Errorcodes = {
+        {400, "Bad Request"},
+        {403, "Forbidden"},
+        {404, "Not Found"},
+        {405, "Method Not Allowed"},
+        {413, "Payload Too Large"},
+        {500, "Internal Server Error"}};
 
-    switch (error_code)
+    std::map<int, std::string>::iterator it = Errorcodes.find(error_code);
+    if (it != Errorcodes.end())
     {
-    case 400:
-        message = "Bad Request";
-        break;
-    case 403:
-        message = "Forbidden";
-        break;
-    case 404:
-        message = "Not Found";
-        break;
-    case 405:
-        message = "Method Not Allowed";
-        break;
-    case 413:
-        message = "Payload Too Large";
-        break;
-    case 500:
-        message = "Internal Server Error";
-        break;
-    default:
+        reason = it->second;
+    }
+    else
+    {
         error_code = 500;
-        message = "Internal Server Error";
-        break;
+        reason = "Internal Server Error";
     }
 
     this->res.status_code = error_code;
-    this->res.reason = message;
+    this->res.reason = reason;
     this->res.content_type = "text/html";
 
     std::stringstream body;
-    body << "<html><body><h1>" << error_code << " " << message << "</h1></body></html>";
+    body << "<html><body><h1>" << error_code << " " << reason << "</h1></body></html>";
 
     this->res.body = body.str();
 }
@@ -257,31 +249,12 @@ bool Client::handle_get_req(ServerConfig &config)
     return true;
 }
 
-bool Client::is_method_allowed(ServerConfig &config, std::string method)
-{
-    for (std::vector<std::string>::const_iterator it = config.allowed_methods.begin(); it != config.allowed_methods.end(); ++it)
-    {
-        if (*it == method)
-            return true;
-    }
-    for (std::vector<std::string>::const_iterator it = config.allowed_methods.begin(); it != config.allowed_methods.end(); ++it)
-    {
-        if (*it == method)
-            return true;
-    }
-
-    return false;
-
-}
-
 bool Client::prepare_response(ServerConfig &config)
 {
-    
+
     if (!this->clear_response())
         return false;
     // QUI SI PUUO INSERIRE VALIDAZIONE
-        if (!is_method_allowed(config, this->get_method()))
-            build_error_response(405);
 
     if (this->get_method() == "GET")
         handle_get_req(config);

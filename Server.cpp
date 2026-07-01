@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "webserv.hpp"
+
 Server::Server() : fd(-1), running(false), epoll_fd(-1)
 {
 }
@@ -17,8 +18,7 @@ void Server::set_max_conn(int parsed_max) { this->config.max_conn = parsed_max; 
 // TODO: READ CONFIG FILE AND PARSE REAL VALUES
 // TODO: BETTER OPEN ERROR LOGGING
 // INFO: the listen field in the config file can be used onlt with the port
-// without an address, in that case the default is "0.0.0.0" which listens to
-// any address!
+// without an address, in that case the default is "0.0.0.0" which listens to any address!
 bool Server::parse_config(const char *conf_file)
 {
     int conf_fd;
@@ -32,8 +32,7 @@ bool Server::parse_config(const char *conf_file)
     set_port(PORT);
     // ADD LOG INFO...
     set_address(ADDRESS);
-    // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO
-    // SOMAXCON
+    // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO SOMAXCON
     set_max_conn(MAX_CONN);
     // Da decidere cosa fare
     this->config.root = "./www";
@@ -296,6 +295,7 @@ bool Server::run()
                         close(client_fd);
                         continue;
                     }
+                    std::cout << "Client connected, fd: " << client_fd << "\n";
                 }
                 else
                 {
