@@ -24,9 +24,21 @@ const std::string &Client::get_request() const
     return this->request_buffer;
 }
 
+bool Client::prepare_error_response(int error_code)
+{
+    if (!this->clear_response())
+        return false;
+
+    if (this->req.version.empty())
+        this->req.version = "HTTP/1.1";
+    build_error_response(error_code);
+    build_response_buffer();
+    return true;
+}
+
 void Client::print_request() const
 {
-    std::cout << "Method: " << req.method << std::endl;
+    std::cout << "\nMethod: " << req.method << std::endl;
     std::cout << "Path: " << req.path << std::endl;
     std::cout << "Version: " << req.version << std::endl;
     for (std::map<std::string, std::string>::const_iterator it = req.headers.begin(); it != req.headers.end(); ++it)
@@ -54,18 +66,46 @@ bool Client::req_done() const
     return (req.state == HttpRequest::DONE);
 }
 
+bool Client::req_error() const
+{
+    return req.state == HttpRequest::ERROR;
+}
+
 bool Client::parse_request_line(std::size_t &pos)
 {
     size_t end = this->request_buffer.find("\r\n");
-    if (end == std::string::npos)
-        return false;
     std::string line = this->request_buffer.substr(0, end);
     size_t first_space = line.find(' ');
     size_t second_space = line.find(' ', first_space + 1);
 
+    if (first_space == std::string::npos || second_space == std::string::npos)
+    {
+        req.state = HttpRequest::ERROR;
+        return true;
+    }
+
+    if (line.find(' ', second_space + 1) != std::string::npos)
+    {
+        req.state = HttpRequest::ERROR;
+        return true;
+    }
+
     req.method = line.substr(0, first_space);
     req.path = line.substr(first_space + 1, second_space - first_space - 1);
     req.version = line.substr(second_space + 1);
+
+    if (req.method.empty() || req.path.empty() || req.path[0] != '/')
+    {
+        req.state = HttpRequest::ERROR;
+        return true;
+    }
+
+    if (req.version.compare(0, 5, "HTTP/") != 0)
+    {
+        req.state = HttpRequest::ERROR;
+        return true;
+    }
+
     pos = end + 2;
     req.state = HttpRequest::PARSING_HEADERS;
     return true;
@@ -74,20 +114,33 @@ bool Client::parse_request_line(std::size_t &pos)
 bool Client::parse_headers(std::size_t &pos)
 {
     size_t headers_end = this->request_buffer.find("\r\n\r\n");
-    if (headers_end == std::string::npos)
-        return false;
     size_t line_start = pos;
     while (line_start < headers_end)
     {
         size_t line_end = this->request_buffer.find("\r\n", line_start);
+        if (line_end == std::string::npos || line_end > headers_end)
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
         std::string line = this->request_buffer.substr(line_start, line_end - line_start);
         size_t colon = line.find(':');
+        if (colon == std::string::npos || colon == 0)
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
         std::string key = line.substr(0, colon);
-        std::string value = line.substr(colon + 2);
+        size_t value_start = colon + 1;
+        while (value_start < line.size() && line[value_start] == ' ')
+            ++value_start;
+        std::string value = line.substr(value_start);
+
         req.headers[key] = value;
         line_start = line_end + 2;
     }
     pos = headers_end + 4;
+    req.body_start = pos;
     req.state = HttpRequest::PARSING_BODY;
     return true;
 }
@@ -96,9 +149,23 @@ bool Client::parse_body(std::size_t &pos)
 {
     if (req.headers.count("Content-Length"))
     {
-        size_t content_length = std::atoi(req.headers["Content-Length"].c_str());
+        const std::string &cl = req.headers["Content-Length"];
+        for (size_t i = 0; i < cl.size(); ++i)
+        {
+            if (!isdigit(static_cast<unsigned char>(cl[i])))
+            {
+                req.state = HttpRequest::ERROR;
+                return true;
+            }
+        }
+        long content_length = std::atol(cl.c_str());
+        if (content_length < 0)
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
         size_t available = this->request_buffer.size() - pos;
-        if (available < content_length)
+        if (available < static_cast<size_t>(content_length))
             return true;
         req.body = this->request_buffer.substr(pos, content_length);
         pos += content_length;
@@ -110,6 +177,9 @@ bool Client::parse_body(std::size_t &pos)
 bool Client::parse_request()
 {
     std::size_t pos = 0;
+    if (req.state == HttpRequest::PARSING_BODY)
+        pos = req.body_start;
+
     while (pos < this->request_buffer.size() || req.state == HttpRequest::PARSING_BODY)
     {
         switch (req.state)
@@ -125,6 +195,8 @@ bool Client::parse_request()
         case HttpRequest::PARSING_BODY:
             return parse_body(pos);
         case HttpRequest::DONE:
+            return true;
+        case HttpRequest::ERROR:
             return true;
         }
     }
@@ -210,6 +282,7 @@ void Client::build_error_response(int error_code)
     Errorcodes[405] = "Method Not Allowed";
     Errorcodes[413] = "Payload Too Large";
     Errorcodes[500] = "Internal Server Error";
+    Errorcodes[505] = "HTTP Version Not Supported";
 
     std::map<int, std::string>::iterator it = Errorcodes.find(error_code);
     if (it != Errorcodes.end())
@@ -232,18 +305,31 @@ void Client::build_error_response(int error_code)
     this->res.body = body.str();
 }
 
-bool Client::handle_get_req(ServerConfig &config)
+bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
 {
+    std::string root;
+    std::string index;
+
+    if (loc && !loc->root.empty())
+        root = loc->root;
+    else
+        root = config.root;
+
+    if (loc && !loc->index.empty())
+        index = loc->index;
+    else
+        index = config.index;
 
     std::string file_path;
 
     this->res.reason = "OK";
     this->res.content_type = "text/html";
 
-    if (this->get_path() == "/")
-        file_path = config.root + "/" + config.index;
+    if (this->get_path() == "/" || (loc && this->get_path() == loc->path))
+        file_path = root + "/" + index;
     else
-        file_path = config.root + this->get_path();
+        file_path = root + this->get_path();
+
     this->res.status_code = read_file(file_path, this->res.body);
     if (this->res.status_code != 200)
         build_error_response(this->res.status_code);
@@ -251,21 +337,79 @@ bool Client::handle_get_req(ServerConfig &config)
     return true;
 }
 
+const LocationConfig *Client::match_location(const ServerConfig &config) const
+{
+    const LocationConfig *best = NULL;
+    size_t best_len = 0;
+    const std::string &path = this->get_path();
+
+    for (size_t i = 0; i < config.locations.size(); ++i)
+    {
+        const LocationConfig &l = config.locations[i];
+        if (l.path.empty())
+            continue;
+        if (path.compare(0, l.path.size(), l.path) == 0 && l.path.size() > best_len)
+        {
+            best = &l;
+            best_len = l.path.size();
+        }
+    }
+    return best;
+}
+
+bool Client::is_method_allowed(const std::vector<std::string> &allowed) const
+{
+    for (size_t i = 0; i < allowed.size(); ++i)
+        if (allowed[i] == this->get_method())
+            return true;
+    return false;
+}
+
+int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
+{
+    if (this->get_version() != "HTTP/1.1")
+        return 505;
+
+    loc = match_location(config);
+
+    const std::vector<std::string> *allowed;
+    if (loc && !loc->allowed_methods.empty())
+        allowed = &loc->allowed_methods;
+    else
+        allowed = &config.allowed_methods;
+
+    if (!is_method_allowed(*allowed))
+        return 405;
+
+    // TODO: Content-Length / body size limit -> 413
+
+    return 0;
+}
+
 bool Client::prepare_response(ServerConfig &config)
 {
 
     if (!this->clear_response())
         return false;
-    // QUI SI PUUO INSERIRE VALIDAZIONE
+
+    const LocationConfig *loc = NULL;
+    int status = validate_req(config, loc);
+
+    if (status != 0)
+    {
+        build_error_response(status);
+        build_response_buffer();
+        return true;
+    }
 
     if (this->get_method() == "GET")
-        handle_get_req(config);
+        handle_get_req(config, loc);
     // else if (this->get_method() == "POST")
     //     handle_post(config);
     // else if (this->get_method() == "DELETE")
     //     handle_delete(config);
     else
-        build_error_response(405);
+        build_error_response(501);
 
     build_response_buffer();
     return true;

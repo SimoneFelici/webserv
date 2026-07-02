@@ -194,16 +194,24 @@ bool Server::handle_client_read(int client_fd)
 
     if (!client.has_full_headers(temp, bytes_read))
         return true;
-    if (!client.parse_request())
-        return false;
+
+    client.parse_request();
+
+    if (client.req_error())
+    {
+        if (!client.prepare_error_response(400))
+            return false;
+        if (!modify_epoll_fd(client_fd, EPOLLOUT))
+            return false;
+        return true;
+    }
+
     if (client.req_done())
     {
         if (DEBUG)
             client.print_request();
-
         if (!client.prepare_response(this->config))
             return false;
-
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }

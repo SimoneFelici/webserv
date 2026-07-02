@@ -3,10 +3,12 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
-#include <string>
 #include <sstream>
+#include <string>
+#include <vector>
 
 struct ServerConfig;
+struct LocationConfig;
 
 class Client
 {
@@ -27,6 +29,8 @@ class Client
 
     bool parse_request();
     bool req_done() const;
+    bool req_error() const;
+    bool prepare_error_response(int error_code);
 
     // Getters
     const std::string &get_method() const;
@@ -35,16 +39,16 @@ class Client
     const std::string &get_body() const;
     std::string get_header(const std::string &key) const;
 
-    //Response
+    // Response
     bool clear_response();
-    bool prepare_response(ServerConfig& config); 
+    bool prepare_response(ServerConfig &config);
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
 
     // Methods
     void build_error_response(int error_code);
-    bool handle_get_req(ServerConfig &config);
+    bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
 
   private:
     struct HttpRequest
@@ -54,7 +58,8 @@ class Client
             PARSING_REQUEST_LINE,
             PARSING_HEADERS,
             PARSING_BODY,
-            DONE
+            DONE,
+            ERROR
         };
 
         State state;
@@ -64,6 +69,7 @@ class Client
         std::string version;
         std::map<std::string, std::string> headers;
         std::string body;
+        std::size_t body_start;
 
         HttpRequest() : state(PARSING_REQUEST_LINE) {}
     };
@@ -92,5 +98,8 @@ class Client
     bool parse_headers(std::size_t &pos);
     bool parse_body(std::size_t &pos);
     void build_response_buffer();
-    bool is_method_allowed();
+
+    const LocationConfig *match_location(const ServerConfig &config) const;
+    bool is_method_allowed(const std::vector<std::string> &allowed) const;
+    int validate_req(ServerConfig &config, const LocationConfig *&loc);
 };
