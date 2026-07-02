@@ -82,6 +82,8 @@ class Client
         std::string reason;
         std::map<std::string, std::string> headers;
         std::string body;
+
+        HttpResponse() : status_code(200) {}
     };
 
     int client_fd;
@@ -95,6 +97,7 @@ class Client
     HttpResponse res;
 
     bool parse_request_line(std::size_t &pos);
+    bool parse_header_line(const std::string &line);
     bool parse_headers(std::size_t &pos);
     bool parse_body(std::size_t &pos);
     void build_response_buffer();

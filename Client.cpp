@@ -29,6 +29,7 @@ bool Client::prepare_error_response(int error_code)
     if (!this->clear_response())
         return false;
 
+    this->res.headers.clear();
     if (this->req.version.empty())
         this->req.version = "HTTP/1.1";
     build_error_response(error_code);
@@ -111,34 +112,46 @@ bool Client::parse_request_line(std::size_t &pos)
     return true;
 }
 
+bool Client::parse_header_line(const std::string &line)
+{
+    size_t colon = line.find(':');
+    if (colon == std::string::npos || colon == 0)
+        return false;
+
+    std::string key = line.substr(0, colon);
+
+    if (key.find_first_of(" \t") != std::string::npos)
+        return false;
+
+    to_lower(key);
+    req.headers[key] = trim(line.substr(colon + 1));
+    return true;
+}
+
 bool Client::parse_headers(std::size_t &pos)
 {
     size_t headers_end = this->request_buffer.find("\r\n\r\n");
     size_t line_start = pos;
+
     while (line_start < headers_end)
     {
         size_t line_end = this->request_buffer.find("\r\n", line_start);
-        if (line_end == std::string::npos || line_end > headers_end)
-        {
-            req.state = HttpRequest::ERROR;
-            return true;
-        }
         std::string line = this->request_buffer.substr(line_start, line_end - line_start);
-        size_t colon = line.find(':');
-        if (colon == std::string::npos || colon == 0)
+
+        if (!parse_header_line(line))
         {
             req.state = HttpRequest::ERROR;
             return true;
         }
-        std::string key = line.substr(0, colon);
-        size_t value_start = colon + 1;
-        while (value_start < line.size() && line[value_start] == ' ')
-            ++value_start;
-        std::string value = line.substr(value_start);
-
-        req.headers[key] = value;
         line_start = line_end + 2;
     }
+
+    if (req.headers.count("host") == 0)
+    {
+        req.state = HttpRequest::ERROR;
+        return true;
+    }
+
     pos = headers_end + 4;
     req.body_start = pos;
     req.state = HttpRequest::PARSING_BODY;
@@ -147,9 +160,16 @@ bool Client::parse_headers(std::size_t &pos)
 
 bool Client::parse_body(std::size_t &pos)
 {
-    if (req.headers.count("Content-Length"))
+    if (req.headers.count("content-length"))
     {
-        const std::string &cl = req.headers["Content-Length"];
+        const std::string &cl = req.headers["content-length"];
+
+        // TODO: For now we can parse a max of 1GB
+        if (cl.empty() || cl.size() > 9)
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
         for (size_t i = 0; i < cl.size(); ++i)
         {
             if (!isdigit(static_cast<unsigned char>(cl[i])))
@@ -159,11 +179,8 @@ bool Client::parse_body(std::size_t &pos)
             }
         }
         long content_length = std::atol(cl.c_str());
-        if (content_length < 0)
-        {
-            req.state = HttpRequest::ERROR;
-            return true;
-        }
+        // TODO: when parsing client_max_body_size add check
+
         size_t available = this->request_buffer.size() - pos;
         if (available < static_cast<size_t>(content_length))
             return true;
@@ -225,7 +242,12 @@ const std::string &Client::get_body() const
 
 std::string Client::get_header(const std::string &key) const
 {
-    std::map<std::string, std::string>::const_iterator it = this->req.headers.find(key);
+    // le chiavi sono salvate in lowercase: normalizzo anche qui,
+    // cosi' get_header("Host") e get_header("host") funzionano entrambe
+    std::string lower(key);
+    to_lower(lower);
+
+    std::map<std::string, std::string>::const_iterator it = this->req.headers.find(lower);
     if (it == this->req.headers.end())
         return "";
     return it->second;
@@ -260,10 +282,13 @@ void Client::build_response_buffer()
 {
     std::stringstream ss;
 
-    this->res.version = this->get_version(); // verrà gestito prima durante la validazione della request
+    this->res.version = "HTTP/1.1";
     ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
     ss << "Content-Type: " << this->res.content_type << "\r\n";
     ss << "Content-Length: " << this->res.body.size() << "\r\n";
+    for (std::map<std::string, std::string>::const_iterator it = this->res.headers.begin();
+         it != this->res.headers.end(); ++it)
+        ss << it->first << ": " << it->second << "\r\n";
     ss << "Connection: close\r\n";
     ss << "\r\n";
     ss << this->res.body;
@@ -379,7 +404,17 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
         allowed = &config.allowed_methods;
 
     if (!is_method_allowed(*allowed))
+    {
+        std::string allow;
+        for (size_t i = 0; i < allowed->size(); ++i)
+        {
+            if (i > 0)
+                allow += ", ";
+            allow += (*allowed)[i];
+        }
+        this->res.headers["Allow"] = allow;
         return 405;
+    }
 
     // TODO: Content-Length / body size limit -> 413
 
@@ -392,6 +427,7 @@ bool Client::prepare_response(ServerConfig &config)
     if (!this->clear_response())
         return false;
 
+    this->res.headers.clear();
     const LocationConfig *loc = NULL;
     int status = validate_req(config, loc);
 

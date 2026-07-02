@@ -37,6 +37,8 @@ bool Server::parse_config(const char *conf_file)
     // Da decidere cosa fare
     this->config.root = "./www";
     this->config.index = "index.html";
+    // TODO: Prenderlo dal config.
+    this->config.allowed_methods.push_back("GET");
     close(conf_fd);
     return (true);
 }
