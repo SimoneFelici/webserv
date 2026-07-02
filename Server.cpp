@@ -37,6 +37,15 @@ bool Server::parse_config(const char *conf_file)
     // Da decidere cosa fare
     this->config.root = "./www";
     this->config.index = "index.html";
+    LocationConfig root_location;
+
+    root_location._location = "/";
+    root_location.root = this->config.root;
+    root_location.index = this->config.index;
+    root_location.autoindex = false;
+    root_location.allowed_methods.push_back("GET");
+
+    this->config.locations.push_back(root_location);
     close(conf_fd);
     return (true);
 }

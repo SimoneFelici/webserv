@@ -250,12 +250,96 @@ bool Client::handle_get_req(ServerConfig &config)
     return true;
 }
 
+bool Client::is_allowed_method(ServerConfig &config)
+{
+    std::string path = this->get_path();     // mi prendo il path della request
+    std::string method = this->get_method(); // mi prendo il method della request
+
+    const LocationConfig *bestMatch = NULL; // imposto a null perche potrebbero non esserci match
+    size_t best_len = 0;                    // devo controllare anche la corrispondenza per lunghezza
+
+    // inizio a scorrere le location dentro la config
+    for (std::vector<LocationConfig>::const_iterator it = config.locations.begin();
+         it != config.locations.end();
+         ++it)
+    {
+        const std::string &location_path = it->_location; // mi prendo la location
+
+        if (location_path.empty()) // check di protezione: se è vuota vado alla prossima
+            continue;
+
+        /*
+            La location matcha se:
+
+            1. path == location_path
+               esempio:
+               path = "/uploads"
+               location_path = "/uploads"
+
+            oppure
+
+            2. la path inizia con location_path
+               esempio:
+               path = "/uploads/file.txt"
+               location_path = "/uploads"
+
+               Però controllo anche che dopo "/uploads" ci sia "/",
+               così evito che "/uploads" matchi erroneamente "/uploads2".
+        */
+        if (path == location_path || (path.find(location_path) == 0 && (location_path == "/" || path[location_path.size()] == '/')))
+        {
+            if (location_path.size() > best_len)
+            {
+                bestMatch = &(*it);              // salvo il puntatore a tutta la LocationConfig corrente
+                best_len = location_path.size(); // salvo la lunghezza del match migliore
+            }
+        }
+    }
+    if (bestMatch == NULL)
+    {
+        std::cout << "DEBUG: nessuna location matchata" << std::endl;
+        return false;
+    }
+
+    std::cout << "DEBUG: location matchata: " << bestMatch->_location << std::endl;
+
+    /*
+    1. prende il path della request dal client
+    2. cerca la location migliore dentro config.locations
+    3. se non trova nessuna location -> false oppure fallback
+    4. prende allowed_methods di quella location
+    5. controlla se this->get_method() è dentro allowed_methods
+    6. se sì ritorna true
+    7. se no ritorna false
+    */
+    return true;
+}
+
+/*
+1. pulisco response
+1.1 Validazione response
+2. trovo la location migliore per req.path
+3. se non trovo location: uso fallback oppure errore
+4. controllo se req.method è dentro location.allowed_methods
+5. se non è consentito: 405 Method Not Allowed
+6. se è consentito:
+       if GET -> handle_get_req(location/server config)
+       if POST -> handle_post_req(...)
+       if DELETE -> handle_delete_req(...)
+7. build_response_buffer()
+*/
 bool Client::prepare_response(ServerConfig &config)
 {
 
     if (!this->clear_response())
         return false;
     // QUI SI PUUO INSERIRE VALIDAZIONE
+
+    // if (!is_allowed_method(config))
+    //     // build_error_response(405);
+    // is_allowed_method(config);
+
+    // QUI VA MESSO CHECK DEI METODI CONSENTITI
 
     if (this->get_method() == "GET")
         handle_get_req(config);
