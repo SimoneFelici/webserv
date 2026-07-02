@@ -48,6 +48,7 @@ void Client::print_request() const
         std::cout << "Body: " << req.body << std::endl;
 }
 
+// TODO: maybe add a limit?
 bool Client::has_full_headers(const char *data, size_t len)
 {
     this->request_buffer.append(data, len);
@@ -242,8 +243,6 @@ const std::string &Client::get_body() const
 
 std::string Client::get_header(const std::string &key) const
 {
-    // le chiavi sono salvate in lowercase: normalizzo anche qui,
-    // cosi' get_header("Host") e get_header("host") funzionano entrambe
     std::string lower(key);
     to_lower(lower);
 
