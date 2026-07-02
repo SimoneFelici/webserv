@@ -71,7 +71,7 @@ class Client
         std::string body;
         std::size_t body_start;
 
-        HttpRequest() : state(PARSING_REQUEST_LINE) {}
+        HttpRequest() : state(PARSING_REQUEST_LINE), body_start(0) {}
     };
 
     struct HttpResponse
