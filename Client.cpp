@@ -353,8 +353,6 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     else
         file_path = root + this->get_path();
 
-    // il MIME va calcolato sul file RISOLTO: "GET /" deve dare
-    // il content-type di index.html, non di "/"
     this->res.content_type = get_content_type(file_path);
 
     this->res.status_code = read_file(file_path, this->res.body);
@@ -375,7 +373,11 @@ const LocationConfig *Client::match_location(const ServerConfig &config) const
         const LocationConfig &l = config.locations[i];
         if (l.path.empty())
             continue;
-        if (path.compare(0, l.path.size(), l.path) == 0 && l.path.size() > best_len)
+        if (path.compare(0, l.path.size(), l.path) != 0)
+            continue;
+        if (l.path != "/" && path.size() > l.path.size() && path[l.path.size()] != '/')
+            continue;
+        if (l.path.size() > best_len)
         {
             best = &l;
             best_len = l.path.size();
@@ -392,9 +394,26 @@ bool Client::is_method_allowed(const std::vector<std::string> &allowed) const
     return false;
 }
 
+// TODO(Simone): implementare.
+// Pulisce req.path e torna 0 se ok, altrimenti lo status code di errore.
+// Passi, IN QUEST'ORDINE (decodificare prima di normalizzare e' essenziale,
+// altrimenti "%2e%2e%2f" bypassa il check):
+//   1. percent-decode di req.path:
+//      - "%XY" con X/Y non esadecimali -> 400
+//      - "%" troncato a fine stringa -> 400
+//      - byte nullo "%00" -> 400
+//   2. normalizzazione dei segmenti (split su '/'):
+//      - segmento ""  o "."  -> si scarta
+//      - segmento ".." -> pop dell'ultimo segmento; se non c'e' niente
+//        da poppare sta uscendo dalla root -> 403
+//   3. ricostruire req.path canonico ("/" + segmenti uniti da "/"),
+//      preservando l'eventuale trailing slash (servira' per le directory)
+// Dopo questa funzione, root + req.path non puo' piu' uscire da root.
+// NB: se un domani servisse la query string, lo split su '?' andrebbe
+// come primo passo qui dentro, prima del decode.
 int Client::sanitize_path()
 {
-    return 0;
+    return 0; // placeholder: per ora lascia passare tutto
 }
 
 int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
@@ -402,6 +421,8 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     if (this->get_version() != "HTTP/1.1")
         return 505;
 
+    // path pulito PRIMA del matching: match_location e handle_get_req
+    // devono lavorare sul path gia' decodificato e normalizzato
     int status = sanitize_path();
     if (status != 0)
         return status;
