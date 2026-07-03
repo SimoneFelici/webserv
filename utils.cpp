@@ -29,6 +29,19 @@ std::string trim(const std::string &s)
     return s.substr(start, end - start);
 }
 
+// TODO(Simone): implementare.
+// Estrae l'estensione da file_path e torna il MIME type corrispondente.
+// Passi:
+//   1. trovare l'ultimo '.' con rfind, MA deve stare dopo l'ultimo '/'
+//      (altrimenti "./www.test/file" darebbe estensione "test/file")
+//   2. niente punto / niente estensione -> default "application/octet-stream" (come nginx)
+//   3. mappa estensione -> MIME: html, css, js, png, jpg/jpeg, gif, svg, ico, txt, pdf, json
+std::string get_content_type(const std::string &file_path)
+{
+    (void)file_path;
+    return "text/html"; // placeholder: sostituire con la logica vera
+}
+
 // da inserire check su i metodi consentiti per route e su i status code di ritorno
 /*
 read_file() non deve tornare solo bool

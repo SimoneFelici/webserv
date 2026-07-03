@@ -104,5 +104,6 @@ class Client
 
     const LocationConfig *match_location(const ServerConfig &config) const;
     bool is_method_allowed(const std::vector<std::string> &allowed) const;
+    int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
 };
