@@ -452,6 +452,12 @@ bool Client::prepare_response(ServerConfig &config)
         return true;
     }
 
+    // if (!is_allowed_method(config))
+    //     // build_error_response(405);
+    // is_allowed_method(config);
+
+    // QUI VA MESSO CHECK DEI METODI CONSENTITI
+
     if (this->get_method() == "GET")
         handle_get_req(config, loc);
     // else if (this->get_method() == "POST")
