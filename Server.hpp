@@ -13,7 +13,7 @@
 
 struct LocationConfig
 {
-    std::string _location;
+    std::string path;
     std::string root;
     std::string index;
     bool autoindex;
