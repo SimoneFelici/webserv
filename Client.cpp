@@ -39,13 +39,22 @@ bool Client::prepare_error_response(int error_code)
 
 void Client::print_request() const
 {
-    std::cout << "\nMethod: " << req.method << std::endl;
+    std::cout << "\n--- REQUEST ---" << std::endl;
+    std::cout << "Method: " << req.method << std::endl;
     std::cout << "Path: " << req.path << std::endl;
     std::cout << "Version: " << req.version << std::endl;
     for (std::map<std::string, std::string>::const_iterator it = req.headers.begin(); it != req.headers.end(); ++it)
         std::cout << it->first << ": " << it->second << std::endl;
     if (!req.body.empty())
         std::cout << "Body: " << req.body << std::endl;
+    std::cout << "---------" << std::endl;
+}
+
+void Client::print_response() const
+{
+    std::cout << "\n--- RESPONSE ---" << std::endl;
+    std::cout << this->response_buffer << std::endl;
+    std::cout << "---------" << std::endl;
 }
 
 // TODO: maybe add a limit?
@@ -394,9 +403,41 @@ bool Client::is_method_allowed(const std::vector<std::string> &allowed) const
     return false;
 }
 
-// TODO: Implement sanitize path
+// TODO: to check implementation
 int Client::sanitize_path()
 {
+    std::string &path = req.path;
+    std::vector<std::string> segs;
+
+    size_t i = 1; // path[0] è '/' garantito da parse_request_line
+    while (i <= path.size())
+    {
+        size_t j = path.find('/', i);
+        if (j == std::string::npos)
+            j = path.size();
+        std::string seg = path.substr(i, j - i);
+
+        if (seg == "..")
+        {
+            if (segs.empty())
+                return 403; // uscirebbe sopra la root
+            segs.pop_back();
+        }
+        else if (!seg.empty() && seg != ".")
+            segs.push_back(seg);
+        i = j + 1;
+    }
+
+    bool trailing_slash = path.size() > 1 && path[path.size() - 1] == '/';
+    path = "/";
+    for (size_t k = 0; k < segs.size(); ++k)
+    {
+        path += segs[k];
+        if (k + 1 < segs.size())
+            path += "/";
+    }
+    if (trailing_slash && path != "/")
+        path += "/";
     return 0;
 }
 
@@ -451,12 +492,6 @@ bool Client::prepare_response(ServerConfig &config)
         build_response_buffer();
         return true;
     }
-
-    // if (!is_allowed_method(config))
-    //     // build_error_response(405);
-    // is_allowed_method(config);
-
-    // QUI VA MESSO CHECK DEI METODI CONSENTITI
 
     if (this->get_method() == "GET")
         handle_get_req(config, loc);
