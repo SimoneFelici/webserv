@@ -24,6 +24,7 @@ class Client
 
     const std::string &get_request() const;
     void print_request() const;
+    void print_response() const;
     // TODO: USE AFTER SENDING THE RESPONSE
     void clear_request();
 

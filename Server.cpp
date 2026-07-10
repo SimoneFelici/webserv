@@ -210,6 +210,8 @@ bool Server::handle_client_read(int client_fd)
     {
         if (!client.prepare_error_response(400))
             return false;
+        if (DEBUG)
+            client.print_response();
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
         return true;
@@ -221,6 +223,8 @@ bool Server::handle_client_read(int client_fd)
             client.print_request();
         if (!client.prepare_response(this->config))
             return false;
+        if (DEBUG)
+            client.print_response();
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
     }

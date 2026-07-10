@@ -29,17 +29,33 @@ std::string trim(const std::string &s)
     return s.substr(start, end - start);
 }
 
-// TODO(Simone): implementare.
-// Estrae l'estensione da file_path e torna il MIME type corrispondente.
-// Passi:
-//   1. trovare l'ultimo '.' con rfind, MA deve stare dopo l'ultimo '/'
-//      (altrimenti "./www.test/file" darebbe estensione "test/file")
-//   2. niente punto / niente estensione -> default "application/octet-stream" (come nginx)
-//   3. mappa estensione -> MIME: html, css, js, png, jpg/jpeg, gif, svg, ico, txt, pdf, json
 std::string get_content_type(const std::string &file_path)
 {
-    (void)file_path;
-    return "text/html"; // placeholder: sostituire con la logica vera
+    // TODO: add more extensions, especially when adding CGI
+    std::map<std::string, std::string> mime;
+    mime["html"] = "text/html";
+    mime["css"] = "text/css";
+    mime["js"] = "application/javascript";
+    mime["png"] = "image/png";
+    mime["jpg"] = "image/jpeg";
+    mime["jpeg"] = "image/jpeg";
+    mime["gif"] = "image/gif";
+    mime["svg"] = "image/svg+xml";
+    mime["ico"] = "image/x-icon";
+    mime["txt"] = "text/plain";
+    mime["pdf"] = "application/pdf";
+    mime["json"] = "application/json";
+
+    // TODO: add validation
+    size_t dot = file_path.rfind('.');
+
+    std::string ext = file_path.substr(dot + 1);
+
+    std::map<std::string, std::string>::const_iterator it = mime.find(ext);
+    if (it == mime.end())
+        return ("application/octet-stream");
+
+    return it->second;
 }
 
 // da inserire check su i metodi consentiti per route e su i status code di ritorno
