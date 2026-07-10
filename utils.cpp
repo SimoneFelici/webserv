@@ -1,6 +1,6 @@
 #include "webserv.hpp"
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 bool set_nonblocking(int fd)
@@ -11,28 +11,66 @@ bool set_nonblocking(int fd)
     return true;
 }
 
-// da inserire check su i metodi consentiti per route 
-/*
-read_file() non deve tornare solo bool
-deve distinguere:
-file non esiste       -> 404
-path è directory      -> dipende: index / autoindex / 403
-non ho permessi       -> 403
-open/read fallisce    -> 500 oppure 403, dipende
-*/
-int read_file(const std::string& file_path, std::string& body)
+void to_lower(std::string &s)
 {
-    struct stat file_stat; 
-    
-    if (stat(file_path.c_str(), &file_stat) == -1) // stat(percorso_del_file, indirizzo_della_struct_dove_scrivere)
-        return (404);
+    for (size_t i = 0; i < s.size(); ++i)
+        s[i] = static_cast<char>(tolower(static_cast<unsigned char>(s[i])));
+}
 
-    if (!S_ISREG(file_stat.st_mode)) //Questa è una macro. e st_mode contiene informazioni
-        return (403);
+// toglie spazi e tab in testa e in coda
+std::string trim(const std::string &s)
+{
+    size_t start = 0;
+    size_t end = s.size();
+    while (start < end && (s[start] == ' ' || s[start] == '\t'))
+        ++start;
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t'))
+        --end;
+    return s.substr(start, end - start);
+}
 
+std::string get_content_type(const std::string &file_path)
+{
+    // TODO: add more extensions, especially when adding CGI
+    std::map<std::string, std::string> mime;
+    mime["html"] = "text/html";
+    mime["css"] = "text/css";
+    mime["js"] = "application/javascript";
+    mime["png"] = "image/png";
+    mime["jpg"] = "image/jpeg";
+    mime["jpeg"] = "image/jpeg";
+    mime["gif"] = "image/gif";
+    mime["svg"] = "image/svg+xml";
+    mime["ico"] = "image/x-icon";
+    mime["txt"] = "text/plain";
+    mime["pdf"] = "application/pdf";
+    mime["json"] = "application/json";
+
+    // TODO: add validation
+    size_t dot = file_path.rfind('.');
+
+    std::string ext = file_path.substr(dot + 1);
+
+    std::map<std::string, std::string>::const_iterator it = mime.find(ext);
+    if (it == mime.end())
+        return ("application/octet-stream");
+
+    return it->second;
+}
+
+int read_file(const std::string &file_path, std::string &body)
+{
     int fd = open(file_path.c_str(), O_RDONLY);
     if (fd == -1)
-        return (500);
+    {
+        if (errno == ENOENT || errno == ENOTDIR)
+            return 404;
+        if (errno == EACCES)
+            return 403;
+        if (errno == EISDIR)
+            return 403;
+        return 500;
+    }
 
     body.clear();
 
@@ -40,14 +78,14 @@ int read_file(const std::string& file_path, std::string& body)
     ssize_t bytes_read;
 
     while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0)
-    {
         body.append(buffer, bytes_read);
+
+    if (bytes_read == -1)
+    {
+        close(fd);
+        return 500;
     }
 
     close(fd);
-
-    if (bytes_read == -1)
-        return (500);
-
-    return (200);
+    return 200;
 }
