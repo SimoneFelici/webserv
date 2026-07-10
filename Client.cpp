@@ -1,6 +1,7 @@
 #include "Client.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
+#include <dirent.h>
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
 
@@ -338,33 +339,190 @@ void Client::build_error_response(int error_code)
     this->res.body = body.str();
 }
 
-bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
+/* prende una stringa e la rende sicura da stampare dentro una pagina HTML. Se trova caratteri speciali HTML, li sostituisce. */
+static std::string html_escape(const std::string &s)
+{
+    std::string escaped;
+
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        if (s[i] == '&')
+            escaped += "&amp;";
+        else if (s[i] == '<')
+            escaped += "&lt;";
+        else if (s[i] == '>')
+            escaped += "&gt;";
+        else if (s[i] == '"')
+            escaped += "&quot;";
+        else
+            escaped += s[i];
+    }
+    return escaped;
+}
+/* Questa funzione serve solo nell’autoindex, dentro build_autoindex_body(), serve a costruire l’href.
+*/
+static std::string join_url_path(const std::string &base, const std::string &name)
+{
+    if (base.empty())
+        return "/" + name;
+    if (base[base.size() - 1] == '/')
+        return base + name;
+    return base + "/" + name;
+}
+
+static int build_autoindex_body(const std::string &dir_path, const std::string &request_path, std::string &body)
+{
+    /*
+    DIR è un tipo della libreria C/POSIX, dichiarato in: #include <dirent.h>
+    Serve a rappresentare una directory aperta.
+    */
+    DIR *dir = opendir(dir_path.c_str()); // apri questa cartella, dammi un puntatore/handle per leggerne il contenuto
+
+    if (!dir)
+    {
+        if (errno == EACCES)
+            return 403;
+        return 500;
+    }
+
+    std::stringstream ss;
+    ss << "<html><body><h1>Index of " << html_escape(request_path) << "</h1><ul>";
+
+    struct dirent *entry; // Poi con quel dir puoi leggere le entries:
+    while ((entry = readdir(dir)) != NULL) // Legge una voce alla volta dalla directory.
+    {
+        std::string name = entry->d_name;
+
+        if (name == ".")
+            continue;
+        /*
+        html_escape(request_path) serve a trasformare alcuni caratteri speciali in testo “sicuro” da mettere dentro HTML. 
+        Se request_path contiene caratteri tipo < o >, il browser può interpretarli come tag HTML.
+        */
+        ss << "<li><a href=\"" << html_escape(join_url_path(request_path, name)) << "\">" << html_escape(name) << "</a></li>";
+    }
+
+    closedir(dir); // Chiude la directory aperta con opendir().
+    ss << "</ul></body></html>";
+    body = ss.str();
+    return 200;
+}
+
+std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc) const
 {
     std::string root;
-    std::string index;
 
     if (loc && !loc->root.empty())
         root = loc->root;
     else
         root = config.root;
 
-    if (loc && !loc->index.empty())
-        index = loc->index;
-    else
-        index = config.index;
+    std::string relative_path = this->get_path();
 
-    std::string file_path;
+    if (loc && loc->path != "/" &&
+        relative_path.compare(0, loc->path.size(), loc->path) == 0)
+    {
+        relative_path = relative_path.substr(loc->path.size());
+    }
 
+    if (relative_path.empty())
+        relative_path = "/";
+
+    if (relative_path == "/")
+        return root;
+
+    return root + relative_path;
+}
+
+bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
+{
+    std::string file_path; // file_path: sarà il path reale sul filesystem.
+    std::string directory_path;
+    std::string index; // index: nome del file index, tipo index.html.
+    struct stat file_stat;  // file_stat: struct riempita da stat() per capire se il path esiste, se è file, directory, ecc.
+
+    file_path = build_file_path(config, loc); // costruisce il path reale. Qui trasforma l’URL richiesto in path filesystem.
+
+    //Controlla se il path esiste: stat() prova a leggere informazioni sul path.
+    if (stat(file_path.c_str(), &file_stat) == -1)
+    {
+        if (errno == EACCES) // non ho permessi -> 403
+            build_error_response(403);
+        else if (errno == ENOENT || errno == ENOTDIR) // non esiste o un pezzo del path non è directory
+            build_error_response(404);
+        else
+            build_error_response(500); // errore interno
+        return true;
+    }
+
+    if (S_ISDIR(file_stat.st_mode)) // Se è una directory, prova a cercare index
+    {
+        directory_path = file_path;
+        // allora sceglie il nome dell’index: Quindi usa prima l’index della location, se esiste; altrimenti quello globale.
+        if (loc && !loc->index.empty())
+            index = loc->index;
+        else
+            index = config.index;
+
+        if (file_path.empty() || file_path[file_path.size() - 1] != '/')
+            file_path += "/";
+        file_path += index;
+
+        // Controlla se l’index esiste
+        if (stat(file_path.c_str(), &file_stat) == -1)
+        {
+            if (errno == EACCES) // Se non puoi accedere all’index: 403
+                build_error_response(403);
+            else if (errno == ENOENT || errno == ENOTDIR) // Se l’index non esiste, Sceglie se autoindex è attivo:
+            {
+                /*
+                se c’è una location -> usa loc->autoindex
+                altrimenti -> usa config.autoindex
+                */
+                bool autoindex = config.autoindex;
+                if (loc)
+                    autoindex = loc->autoindex;
+                if (!autoindex) // Se autoindex è off 403
+                    build_error_response(403);
+                else
+                {
+                    // Se autoindex è on, genera il body HTML della directory listing.
+                    this->res.status_code = build_autoindex_body(directory_path, this->get_path(), this->res.body);
+                    if (this->res.status_code != 200)
+                        build_error_response(this->res.status_code);
+                    else
+                    {
+                        this->res.reason = "OK";
+                        this->res.content_type = "text/html";
+                    }
+                }
+            }
+            else
+                build_error_response(500);
+            return true;
+        }
+    }
+
+    // Verifica che il path finale sia un file normale
+    if (!S_ISREG(file_stat.st_mode))
+    {
+        build_error_response(403);
+        return true;
+    }
+
+    // Prepara risposta 200
     this->res.reason = "OK";
-
-    if (this->get_path() == "/" || (loc && this->get_path() == loc->path))
-        file_path = root + "/" + index;
-    else
-        file_path = root + this->get_path();
-
     this->res.content_type = get_content_type(file_path);
 
+    // Legge il file apre il file, legge il contenuto e lo mette in res.body.
+    /*
+    200 -> letto correttamente
+    403 -> permessi negati
+    404 -> file non trovato
+    500 -> errore interno
+    */
     this->res.status_code = read_file(file_path, this->res.body);
+    // Se la lettura fallisce, costruisce errore
     if (this->res.status_code != 200)
         build_error_response(this->res.status_code);
 

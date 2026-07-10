@@ -28,6 +28,7 @@ struct ServerConfig
     std::string port;
     std::string root;
     std::string index;
+    bool autoindex;
     int max_conn;
     std::map<int, std::string> error_pages;
     std::vector<std::string> allowed_methods;

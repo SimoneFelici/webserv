@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
 
 struct ServerConfig;
 struct LocationConfig;
@@ -109,4 +110,5 @@ class Client
     bool is_method_allowed(const std::vector<std::string> &allowed) const;
     int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
+    std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
 };
