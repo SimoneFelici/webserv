@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "webserv.hpp"
+#include "Config.hpp"
 
 Server::Server() : fd(-1), running(false), epoll_fd(-1)
 {

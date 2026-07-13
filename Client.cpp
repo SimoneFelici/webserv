@@ -1,7 +1,7 @@
 #include "Client.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
-#include <dirent.h>
+#include "Config.hpp"
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
 

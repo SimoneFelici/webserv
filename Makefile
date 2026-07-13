@@ -1,5 +1,5 @@
 NAME     := webserv
-SRCS     := main.cpp Client.cpp Server.cpp utils.cpp
+SRCS     := main.cpp Client.cpp Server.cpp utils.cpp Config.cpp
 OBJS     := $(SRCS:.cpp=.o)
 
 CXX      := c++

@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <dirent.h> // ?? 
 #include <sys/stat.h>
 
 struct ServerConfig;
