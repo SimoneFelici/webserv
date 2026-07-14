@@ -12,31 +12,6 @@
 #include <ctime>
 #define DEBUG 1
 
-// struct LocationConfig
-// {
-//     std::string path;
-//     std::string root;
-//     std::string index;
-//     bool autoindex;
-//     std::vector<std::string> allowed_methods;
-//     std::map<int, std::string> error_pages;
-// };
-
-// struct ServerConfig
-// {
-//     std::string address;
-//     std::string version;
-//     std::string port;
-//     std::string root;
-//     std::string index;
-//     bool autoindex;
-//     int max_conn;
-//     std::map<int, std::string> error_pages;
-//     std::vector<std::string> allowed_methods;
-
-//     std::vector<LocationConfig> locations;
-// };
-
 class Server
 {
   public:

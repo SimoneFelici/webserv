@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
+#include "webserv.hpp"
 
 struct LocationConfig
 {
@@ -46,9 +47,28 @@ class Config {
     bool hasValidValue(const std::vector<std::string> &tokens,  size_t i, const std::string &directive) const;
     
     std::vector<std::string> tokenize(const std::string &content) const;
+
     bool parseServer(const std::vector<std::string> &tokens, size_t &i);
     bool parseListen(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
     bool parseServerName(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
+    bool parseRoot(const std::vector<std::string> &tokens,
+               size_t &i,
+               std::string &root);
+    bool parseIndex(const std::vector<std::string> &tokens,
+                size_t &i,
+                std::string &index);
+    bool parseAutoindex(const std::vector<std::string> &tokens,
+                    size_t &i,
+                    bool &autoindex);
+    bool parseAllowedMethods(
+    const std::vector<std::string> &tokens,
+    size_t &i,
+    std::vector<std::string> &allowed_methods);
+    bool parseClientMaxBodySize(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
+    bool parseErrorPage(
+    const std::vector<std::string> &tokens,
+    size_t &i,
+    std::map<int, std::string> &error_pages);
 
     public:
     Config();
@@ -58,4 +78,3 @@ class Config {
     const std::vector<ServerConfig> &getConfigs() const;
 
 };
-

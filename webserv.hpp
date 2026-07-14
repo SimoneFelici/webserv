@@ -22,3 +22,4 @@ int read_file(const std::string &file_path, std::string &body);
 void to_lower(std::string &s);
 std::string trim(const std::string &s);
 std::string get_content_type(const std::string &file_path);
+bool string_to_long(const std::string &value, long &result);
