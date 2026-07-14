@@ -18,6 +18,17 @@ const std::vector<ServerConfig> &Config::getConfigs() const
     return configs;
 }
 
+bool Config::hasValidValue(const std::vector<std::string> &tokens, size_t i, const std::string &directive) const
+{
+    if (i >= tokens.size() || tokens[i] == ";" || tokens[i] == "{" || tokens[i] == "}")
+    {
+        std::cerr << "Error: missing value after '" << directive << "'" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 std::vector<std::string> Config::tokenize(const std::string &content) const
 {
     std::vector<std::string> tokens;
@@ -136,11 +147,8 @@ bool Config::parseListen(const std::vector<std::string> &tokens, size_t &i, Serv
 
     const std::string value = tokens[i];
 
-    if (value == ";" || value == "{" || value == "}")
-    {
-        std::cerr << "Error: invalid listen value" << std::endl;
+    if (!hasValidValue(tokens, i, "listen"))
         return false;
-    }
 
     size_t colon = value.find(':');
 
@@ -148,8 +156,12 @@ bool Config::parseListen(const std::vector<std::string> &tokens, size_t &i, Serv
     {
         if (!isValidPort(value))
         {
-            std::cerr << "Error: invalid listen port '"
-                      << value << "'" << std::endl;
+            std::cerr << "Error: invalid listen port '" << value << "'" << std::endl;
+            return false;
+        }
+        if (!server.port.empty() || !server.address.empty())
+        {
+            std::cerr << "Error: duplicate listen directive in server block" << std::endl;
             return false;
         }
 
@@ -195,6 +207,38 @@ bool Config::parseListen(const std::vector<std::string> &tokens, size_t &i, Serv
     return true;
 }
 
+bool Config::parseServerName(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server)
+{
+    if (i >= tokens.size() || tokens[i] != "server_name")
+    {
+        std::cerr << "Error: expected 'server_name'" << std::endl;
+        return false;
+    }
+
+    if (!server.server_name.empty())
+    {
+        std::cerr << "Error: duplicate server_name directive" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    if (!hasValidValue(tokens, i, "server_name"))
+        return false;
+
+    server.server_name = tokens[i];
+    ++i;
+
+    if (i >= tokens.size() || tokens[i] != ";")
+    {
+        std::cerr << "Error: expected ';' after server_name" << std::endl;
+        return false;
+    }
+
+    ++i;
+    return true;
+}
+
 bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
 {
     ServerConfig server;
@@ -220,6 +264,11 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
         if (tokens[i] == "listen")
         {
             if (!parseListen(tokens, i, server))
+                return false;
+        }
+        else if (tokens[i] == "server_name")
+        {
+            if (!parseServerName(tokens, i, server))
                 return false;
         }
         // else if (tokens[i] == "root")

@@ -22,8 +22,9 @@ struct LocationConfig
 struct ServerConfig
 {
     std::string address;
-    std::string version;
     std::string port;
+    std::string server_name;
+    std::string version;
     std::string root;
     std::string index;
     bool autoindex;
@@ -40,10 +41,14 @@ class Config {
     private:
     std::vector<ServerConfig> configs;
 
-    std::vector<std::string> tokenize(const std::string &content) const;
-    bool parseServer(const std::vector<std::string> &tokens, size_t &i);
     bool isValidPort(const std::string &value) const;
     bool isValidIPv4(const std::string &address) const;
+    bool hasValidValue(const std::vector<std::string> &tokens,  size_t i, const std::string &directive) const;
+    
+    std::vector<std::string> tokenize(const std::string &content) const;
+    bool parseServer(const std::vector<std::string> &tokens, size_t &i);
+    bool parseListen(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
+    bool parseServerName(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
 
     public:
     Config();
