@@ -165,7 +165,7 @@ bool Server::handle_client_read(int client_fd)
 
     if (client.req_error())
     {
-        if (!client.prepare_error_response(400))
+        if (!client.prepare_error_response(400, this->config))
             return false;
         if (DEBUG)
             client.print_response();
