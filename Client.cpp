@@ -341,12 +341,13 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[413] = "Payload Too Large";
     error_codes[500] = "Internal Server Error";
     error_codes[501] = "Not Implemented";
+    error_codes[502] = "Internal Server Error";
     error_codes[505] = "HTTP Version Not Supported";
 
     std::map<int, std::string>::const_iterator it = error_codes.find(error_code);
 
     if (it == error_codes.end())
-        return "Internal Server Error";
+        it = error_codes.find(500);
 
     return it->second;
 }
