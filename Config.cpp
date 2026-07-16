@@ -1,11 +1,11 @@
 #include "Config.hpp"
 #include "Server.hpp"
 
-LocationConfig::LocationConfig() : autoindex(false)
+LocationConfig::LocationConfig() : autoindex(-1), redirect_code(0)
 {
 }
 
-ServerConfig::ServerConfig() : autoindex(false), max_conn(0), client_max_body_size(0)
+ServerConfig::ServerConfig() : autoindex(-1), max_conn(0), client_max_body_size(0)
 {
 }
 
@@ -16,6 +16,55 @@ Config::~Config() {}
 const std::vector<ServerConfig> &Config::getConfigs() const
 {
     return configs;
+}
+
+void Config::printConfig() const
+{
+    std::cout << "\n========== CONFIG ==========" << std::endl;
+    for (size_t i = 0; i < configs.size(); ++i)
+    {
+        const ServerConfig &server = configs[i];
+        std::cout << "\nSERVER " << i + 1 << std::endl;
+        std::cout << "address: " << server.address << std::endl;
+        std::cout << "port: " << server.port << std::endl;
+        std::cout << "server_name: " << server.server_name << std::endl;
+        std::cout << "root: " << server.root << std::endl;
+        std::cout << "index: " << server.index << std::endl;
+        std::cout << "autoindex: " << server.autoindex << std::endl;
+        std::cout << "client_max_body_size: " << server.client_max_body_size << std::endl;
+        std::cout << "allowed_methods:";
+        for (size_t j = 0; j < server.allowed_methods.size(); ++j)
+            std::cout << " " << server.allowed_methods[j];
+        std::cout << std::endl;
+        std::cout << "error_pages:" << std::endl;
+        for (std::map<int, std::string>::const_iterator it = server.error_pages.begin(); it != server.error_pages.end(); ++it)
+            std::cout << "  " << it->first << " -> " << it->second << std::endl;
+        std::cout << "locations: " << server.locations.size() << std::endl;
+
+        for (size_t j = 0; j < server.locations.size(); ++j)
+        {
+            const LocationConfig &location = server.locations[j];
+            std::cout << "\n  LOCATION " << location.path << std::endl;
+            std::cout << "  root: " << location.root << std::endl;
+            std::cout << "  index: " << location.index << std::endl;
+            std::cout << "  autoindex: " << location.autoindex << std::endl;
+            std::cout << "  allowed_methods:";
+            for (size_t k = 0; k < location.allowed_methods.size(); ++k)
+                std::cout << " " << location.allowed_methods[k];
+            std::cout << std::endl;
+            std::cout << "  error_pages:" << std::endl;
+            for (std::map<int, std::string>::const_iterator it = location.error_pages.begin(); it != location.error_pages.end(); ++it)
+                std::cout << "    " << it->first << " -> " << it->second << std::endl;
+            std::cout << "  redirect_code: " << location.redirect_code << std::endl;
+            std::cout << "  redirect_url: " << location.redirect_url << std::endl;
+            std::cout << "  upload_path: " << location.upload_path << std::endl;
+            std::cout << "  cgi_handlers:" << std::endl;
+            for (std::map<std::string, std::string>::const_iterator it = location.cgi_handlers.begin(); it != location.cgi_handlers.end(); ++it)
+                std::cout << "    " << it->first << " -> " << it->second << std::endl;
+        }
+    }
+
+    std::cout << "\n============================" << std::endl;
 }
 
 bool Config::hasValidValue(const std::vector<std::string> &tokens, size_t i, const std::string &directive) const
@@ -163,6 +212,7 @@ bool Config::parseListen(const std::vector<std::string> &tokens, size_t &i, Serv
             std::cerr << "Error: invalid listen port '" << port << "'" << std::endl;
             return false;
         }
+
         server.address = address;
         server.port = port;
     }
@@ -254,21 +304,25 @@ bool Config::parseIndex(const std::vector<std::string> &tokens, size_t &i, std::
     ++i;
     return true;
 }
-
-bool Config::parseAutoindex(const std::vector<std::string> &tokens, size_t &i, bool &autoindex)
+bool Config::parseAutoindex(const std::vector<std::string> &tokens, size_t &i, int &autoindex)
 {
     if (i >= tokens.size() || tokens[i] != "autoindex")
     {
         std::cerr << "Error: expected 'autoindex'" << std::endl;
         return false;
     }
+    if (autoindex != -1)
+    {
+        std::cerr << "Error: duplicate autoindex directive" << std::endl;
+        return false;
+    }
     ++i;
     if (!hasValidValue(tokens, i, "autoindex"))
         return false;
     if (tokens[i] == "on")
-        autoindex = true;
+        autoindex = 1;
     else if (tokens[i] == "off")
-        autoindex = false;
+        autoindex = 0;
     else
     {
         std::cerr << "Error: invalid autoindex value '" << tokens[i] << "'" << std::endl;
@@ -283,6 +337,7 @@ bool Config::parseAutoindex(const std::vector<std::string> &tokens, size_t &i, b
     ++i;
     return true;
 }
+
 /*
 Controlla:
 che il token iniziale sia allowed_methods;
@@ -295,7 +350,7 @@ che l’indice i venga lasciato correttamente sul token successivo.
 */
 bool Config::parseAllowedMethods(const std::vector<std::string> &tokens, size_t &i, std::vector<std::string> &allowed_methods)
 {
-    if (i >= tokens.size() || tokens[i] != "allowed_methods")
+    if (i >= tokens.size() || (tokens[i] != "allowed_methods" && tokens[i] != "methods"))
     {
         std::cerr << "Error: expected 'allowed_methods'" << std::endl;
         return false;
@@ -361,7 +416,7 @@ bool Config::parseClientMaxBodySize(const std::vector<std::string> &tokens, size
     }
     if (size <= 0)
     {
-        std::cerr << "Error: client_max_body_size must be greater than 0"  << std::endl;
+        std::cerr << "Error: client_max_body_size must be greater than 0" << std::endl;
         return false;
     }
     server.client_max_body_size = size;
@@ -457,6 +512,233 @@ bool Config::parseErrorPage(const std::vector<std::string> &tokens, size_t &i, s
     return true;
 }
 
+bool Config::parseRedirect(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location)
+{
+    if (i >= tokens.size() || tokens[i] != "return")
+    {
+        std::cerr << "Error: expected 'return'" << std::endl;
+        return false;
+    }
+
+    if (location.redirect_code != 0 || !location.redirect_url.empty())
+    {
+        std::cerr << "Error: duplicate return directive in location" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    if (!hasValidValue(tokens, i, "return"))
+        return false;
+
+    long code;
+
+    if (!string_to_long(tokens[i], code))
+    {
+        std::cerr << "Error: invalid redirect status code '" << tokens[i] << "'" << std::endl;
+        return false;
+    }
+
+    if (code != 301 && code != 302 && code != 303 && code != 307 && code != 308)
+    {
+        std::cerr << "Error: unsupported redirect status code " << code << std::endl;
+        return false;
+    }
+
+    location.redirect_code = static_cast<int>(code);
+    ++i;
+
+    if (!hasValidValue(tokens, i, "return"))
+        return false;
+
+    location.redirect_url = tokens[i];
+    ++i;
+
+    if (i >= tokens.size() || tokens[i] != ";")
+    {
+        std::cerr << "Error: expected ';' after return directive" << std::endl;
+        return false;
+    }
+
+    ++i;
+    return true;
+}
+
+bool Config::parseUploadPath(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location)
+{
+    if (i >= tokens.size() || (tokens[i] != "upload_path" && tokens[i] != "upload"))
+    {
+        std::cerr << "Error: expected 'upload_path'" << std::endl;
+        return false;
+    }
+
+    if (!location.upload_path.empty())
+    {
+        std::cerr << "Error: duplicate upload_path directive in location" << std::endl;
+        return false;
+    }
+    ++i;
+    if (!hasValidValue(tokens, i, "upload_path"))
+        return false;
+
+    location.upload_path = tokens[i];
+    ++i;
+
+    if (i >= tokens.size() || tokens[i] != ";")
+    {
+        std::cerr << "Error: expected ';' after upload_path" << std::endl;
+        return false;
+    }
+
+    ++i;
+    return true;
+}
+
+bool Config::parseCgi(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location)
+{
+    if (i >= tokens.size() || tokens[i] != "cgi")
+    {
+        std::cerr << "Error: expected 'cgi'" << std::endl;
+        return false;
+    }
+    ++i;
+    if (!hasValidValue(tokens, i, "cgi"))
+        return false;
+    const std::string extension = tokens[i];
+    if (extension.size() < 2 || extension[0] != '.')
+    {
+        std::cerr << "Error: CGI extension must start with '.'" << std::endl;
+        return false;
+    }
+    if (location.cgi_handlers.count(extension) != 0)
+    {
+        std::cerr << "Error: duplicate CGI handler for extension '" << extension << "'" << std::endl;
+        return false;
+    }
+    ++i;
+    if (!hasValidValue(tokens, i, "cgi"))
+        return false;
+    const std::string executable = tokens[i];
+    ++i;
+    if (i >= tokens.size() || tokens[i] != ";")
+    {
+        std::cerr << "Error: expected ';' after cgi directive" << std::endl;
+        return false;
+    }
+    location.cgi_handlers[extension] = executable;
+    ++i;
+    return true;
+}
+
+bool Config::parseLocation(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server)
+{
+    LocationConfig location;
+
+    if (i >= tokens.size() || tokens[i] != "location")
+    {
+        std::cerr << "Error: expected 'location'" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    if (!hasValidValue(tokens, i, "location"))
+        return false;
+
+    location.path = tokens[i];
+
+    if (location.path.empty() || location.path[0] != '/')
+    {
+        std::cerr << "Error: location path must start with '/'" << std::endl;
+        return false;
+    }
+
+    for (size_t j = 0; j < server.locations.size(); ++j)
+    {
+        if (server.locations[j].path == location.path)
+        {
+            std::cerr << "Error: duplicate location path '" << location.path << "'" << std::endl;
+            return false;
+        }
+    }
+
+    ++i;
+
+    if (i >= tokens.size() || tokens[i] != "{")
+    {
+        std::cerr << "Error: expected '{' after location path" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    while (i < tokens.size() && tokens[i] != "}")
+    {
+        if (tokens[i] == "root")
+        {
+            if (!parseRoot(tokens, i, location.root))
+                return false;
+        }
+        else if (tokens[i] == "index")
+        {
+            if (!parseIndex(tokens, i, location.index))
+                return false;
+        }
+        else if (tokens[i] == "autoindex")
+        {
+            if (!parseAutoindex(tokens, i, location.autoindex))
+                return false;
+        }
+        else if (tokens[i] == "allowed_methods" || tokens[i] == "methods")
+        {
+            if (!parseAllowedMethods(tokens, i, location.allowed_methods))
+                return false;
+        }
+        else if (tokens[i] == "error_page")
+        {
+            if (!parseErrorPage(tokens, i, location.error_pages))
+                return false;
+        }
+        else if (tokens[i] == "return")
+        {
+            if (!parseRedirect(tokens, i, location))
+                return false;
+        }
+        else if (tokens[i] == "upload_path" || tokens[i] == "upload")
+        {
+            if (!parseUploadPath(tokens, i, location))
+                return false;
+        }
+        else if (tokens[i] == "cgi")
+        {
+            if (!parseCgi(tokens, i, location))
+                return false;
+        }
+        else if (tokens[i] == "location")
+        {
+            std::cerr << "Error: nested location blocks are not allowed" << std::endl;
+            return false;
+        }
+        else
+        {
+            std::cerr << "Error: unknown location directive '" << tokens[i] << "'" << std::endl;
+            return false;
+        }
+    }
+
+    if (i >= tokens.size())
+    {
+        std::cerr << "Error: missing '}' at end of location block" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    server.locations.push_back(location);
+
+    return true;
+}
+
 bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
 {
     ServerConfig server;
@@ -504,7 +786,7 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
             if (!parseAutoindex(tokens, i, server.autoindex))
                 return false;
         }
-        else if (tokens[i] == "allowed_methods")
+        else if (tokens[i] == "allowed_methods" || tokens[i] == "methods")
         {
             if (!parseAllowedMethods(tokens, i, server.allowed_methods))
                 return false;
@@ -519,19 +801,17 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
             if (!parseClientMaxBodySize(tokens, i, server))
                 return false;
         }
-        // else if (tokens[i] == "location")
-        // {
-        //     if (!parseLocation(tokens, i, server))
-        //         return false;
-        // }
+        else if (tokens[i] == "location")
+        {
+            if (!parseLocation(tokens, i, server))
+                return false;
+        }
         else
         {
-            //continue;
             std::cerr << "Error: unknown server directive '" << tokens[i] << "'" << std::endl;
             return false;
         }
     }
-
     if (i >= tokens.size())
     {
         std::cerr << "Error: missing '}' at end of server block" << std::endl;
@@ -539,7 +819,105 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
     }
 
     ++i;
+
+    /* listen è obbligatorio */
+    if (server.port.empty())
+    {
+        std::cerr << "Error: missing listen directive in server block" << std::endl;
+        return false;
+    }
+
+    /* valori di default */
+    if (server.root.empty())
+        server.root = "./www";
+
+    if (server.index.empty())
+        server.index = "index.html";
+
+    if (server.autoindex == -1)
+        server.autoindex = 0;
+
+    if (server.allowed_methods.empty())
+        server.allowed_methods.push_back("GET");
+
+    if (server.client_max_body_size == 0)
+        server.client_max_body_size = 1000000;
+
+    /* controllo duplicati address:port */
+    for (size_t j = 0; j < configs.size(); ++j)
+    {
+        if (configs[j].address == server.address && configs[j].port == server.port)
+        {
+            std::cerr << "Error: duplicate listen address:port '" << server.address << ":" << server.port << "'" << std::endl;
+            return false;
+        }
+    }
+
+    /* solo ora salvo il server */
     configs.push_back(server);
+
+    return true;
+}
+
+bool Config::validateConfig() const
+{
+    if (configs.empty())
+    {
+        std::cerr << "Error: configuration must contain at least one server block" << std::endl;
+        return false;
+    }
+
+    for (size_t i = 0; i < configs.size(); ++i)
+    {
+        const ServerConfig &server = configs[i];
+
+        if (server.address.empty() || server.port.empty())
+        {
+            std::cerr << "Error: server " << i + 1 << " has no valid listen configuration" << std::endl;
+            return false;
+        }
+
+        for (size_t j = 0; j < server.locations.size(); ++j)
+        {
+            const LocationConfig &location = server.locations[j];
+            if (location.path.empty() || location.path[0] != '/')
+            {
+                std::cerr << "Error: invalid location path in server " << i + 1 << std::endl;
+                return false;
+            }
+            if (!location.upload_path.empty() &&
+                location.allowed_methods.empty())
+            {
+                std::cerr << "Error: upload location '" << location.path << "' must define allowed methods" << std::endl;
+                return false;
+            }
+            if (!location.upload_path.empty())
+            {
+                bool post_allowed = false;
+
+                for (size_t k = 0; k < location.allowed_methods.size(); ++k)
+                {
+                    if (location.allowed_methods[k] == "POST")
+                    {
+                        post_allowed = true;
+                        break;
+                    }
+                }
+
+                if (!post_allowed)
+                {
+                    std::cerr << "Error: upload location '" << location.path << "' must allow POST" << std::endl;
+                    return false;
+                }
+            }
+            if (location.redirect_code != 0 &&
+                location.redirect_url.empty())
+            {
+                std::cerr << "Error: redirect location '" << location.path << "' has no destination" << std::endl;
+                return false;
+            }
+        }
+    }
 
     return true;
 }
@@ -558,21 +936,16 @@ bool Config::parse_config(const std::string &conf_file)
         std::cerr << "Error: couldn't open config file" << std::endl;
         return false;
     }
-
     while ((bytes_read = read(conf_fd, buffer, sizeof(buffer))) > 0)
         content.append(buffer, bytes_read);
-
     if (bytes_read < 0)
     {
         std::cerr << "Error: couldn't read config file" << std::endl;
         close(conf_fd);
         return false;
     }
-
     close(conf_fd);
-
     std::vector<std::string> tokens = tokenize(content);
-
     size_t i = 0;
 
     while (i < tokens.size())
@@ -588,6 +961,8 @@ bool Config::parse_config(const std::string &conf_file)
             return false;
         }
     }
+    if (!validateConfig())
+        return false;
 
     return true;
 }

@@ -38,13 +38,13 @@ bool Server::parse_config(const char *conf_file)
     // Da decidere cosa fare
     this->config.root = "./www";
     this->config.index = "index.html";
-    this->config.autoindex = false;
+    this->config.autoindex = 0;
     LocationConfig rootpath;
 
     rootpath.path = "/";
     rootpath.root = this->config.root;
     rootpath.index = this->config.index;
-    rootpath.autoindex = false;
+    rootpath.autoindex = 0;
     rootpath.allowed_methods.push_back("GET");
 
     this->config.locations.push_back(rootpath);

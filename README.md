@@ -1,14 +1,14 @@
 # webserv
 
-to do get:
-1. parser config vero
-   ora autoindex è hardcoded false, quindi non puoi testare autoindex da conf/example.conf
-
-2. error pages configurate
-   build_error_response() genera solo HTML hardcoded
-
-3. redirect configurato nella location
-   il subject richiede HTTP redirection nelle route
-
-4. CGI
-   non è solo GET statica, ma il progetto lo richiede
+to do get controlli finali nel parsing:
+Verificare che esista almeno un blocco server.
+Verificare che ogni server abbia almeno listen.
+Decidere valori di default per campi mancanti:
+root
+index
+allowed_methods
+client_max_body_size
+autoindex
+Verificare eventuali coppie duplicate address:port tra più server.
+Decidere definitivamente la sintassi ufficiale: allowed_methods, upload_path, cgi.
+Fermare il programma quando parse_config() restituisce false.

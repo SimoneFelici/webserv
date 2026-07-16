@@ -479,10 +479,10 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
                 se c’è una location -> usa loc->autoindex
                 altrimenti -> usa config.autoindex
                 */
-                bool autoindex = config.autoindex;
-                if (loc)
-                    autoindex = loc->autoindex;
-                if (!autoindex) // Se autoindex è off 403
+                int autoindex_value = config.autoindex;
+                if (loc && loc->autoindex != -1)
+                    autoindex_value = loc->autoindex;
+                if (autoindex_value != 1) // Se autoindex è off 403
                     build_error_response(403);
                 else
                 {
