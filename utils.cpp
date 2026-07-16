@@ -75,7 +75,7 @@ int read_file(const std::string &file_path, std::string &body)
 
     body.clear();
 
-    char buffer[4096];
+    char buffer[FILE_BUFFER_SIZE];
     ssize_t bytes_read;
 
     while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0)

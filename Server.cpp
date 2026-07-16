@@ -1,55 +1,9 @@
 #include "Server.hpp"
-#include "webserv.hpp"
 #include "Config.hpp"
+#include "webserv.hpp"
 
 Server::Server() : fd(-1), running(false), epoll_fd(-1)
 {
-}
-
-// PARSING
-void Server::set_port(std::string parsed_port) { this->config.port = parsed_port; }
-
-void Server::set_address(std::string parsed_address)
-{
-    this->config.address = parsed_address;
-}
-
-void Server::set_max_conn(int parsed_max) { this->config.max_conn = parsed_max; }
-
-// TODO: READ CONFIG FILE AND PARSE REAL VALUES
-// TODO: BETTER OPEN ERROR LOGGING
-// INFO: the listen field in the config file can be used onlt with the port
-// without an address, in that case the default is "0.0.0.0" which listens to any address!
-bool Server::parse_config(const char *conf_file)
-{
-    int conf_fd;
-
-    conf_fd = open(conf_file, O_RDONLY);
-    if (conf_fd < 0)
-    {
-        std::cerr << "Error: couldn't open config file\n";
-        return (false);
-    }
-    set_port(PORT);
-    // ADD LOG INFO...
-    set_address(ADDRESS);
-    // IF MAX_CONN <= 0 CHANGE IT TO 1, IF LARGER THAN SOMAXCON CHANGE IT TO SOMAXCON
-    set_max_conn(MAX_CONN);
-    // Da decidere cosa fare
-    this->config.root = "./www";
-    this->config.index = "index.html";
-    this->config.autoindex = 0;
-    LocationConfig rootpath;
-
-    rootpath.path = "/";
-    rootpath.root = this->config.root;
-    rootpath.index = this->config.index;
-    rootpath.autoindex = 0;
-    rootpath.allowed_methods.push_back("GET");
-
-    this->config.locations.push_back(rootpath);
-    close(conf_fd);
-    return (true);
 }
 
 // SOCKET
@@ -96,13 +50,14 @@ bool Server::bind_socket()
 
 bool Server::listen_socket()
 {
-    if (listen(fd, this->config.max_conn) == -1)
+    if (listen(fd, SOMAXCONN) == -1)
     {
         std::cerr << "Error: Couldn't listen for connections: " << strerror(errno) << std::endl;
-        return (false);
+        return false;
     }
-    std::cout << "Success: Socket listening, max connections : " << this->config.max_conn << "\n";
-    return (true);
+
+    std::cout << "Success: Socket listening, max connections : " << SOMAXCONN << std::endl;
+    return true;
 }
 
 // CLEANUP SERVER
@@ -193,7 +148,7 @@ bool Server::handle_client_read(int client_fd)
         return false;
 
     Client &client = it->second; // client è un riferimento al Client dentro la map, quindi quando fai append modifichi davvero quel client.
-    char temp[4096];
+    char temp[SOCKET_BUFFER_SIZE];
 
     ssize_t bytes_read = recv(client_fd, temp, sizeof(temp), 0);
 
@@ -265,11 +220,10 @@ bool Server::handle_client_write(int client_fd)
 
 bool Server::run()
 {
-    const int max_events = 1024;
     int client_fd;
 
     this->running = true;
-    epoll_event events[max_events]; // array dove epoll_wait() scriverà gli eventi pronti.
+    epoll_event events[MAX_EPOLL_EVENTS]; // array dove epoll_wait() scriverà gli eventi pronti.
 
     // DEBUG: remove after testing
     // time_t start = time(NULL);
@@ -279,7 +233,7 @@ bool Server::run()
         // if ((DEBUG) && (time(NULL) - start >= 5))
         //     this->running = false;
 
-        int ready = epoll_wait(this->epoll_fd, events, max_events, -1); // ready è il numero di eventi pronti.
+        int ready = epoll_wait(this->epoll_fd, events, MAX_EPOLL_EVENTS, -1); // ready è il numero di eventi pronti.
         if (ready == -1)
         {
             if (errno == EINTR)
@@ -345,31 +299,65 @@ bool Server::run()
     return true;
 }
 
-bool Server::setup(const char *conf_file)
+bool Server::setup(const ServerConfig &parsed_config)
 {
     int opt;
 
-    if (!parse_config(conf_file))
-        return false;
+    this->config = parsed_config;
+
     if (!create_socket())
         return false;
+
     if (!set_nonblocking(fd))
         return false;
 
     opt = 1;
+
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
         std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
         return false;
     }
-    std::cout << "Success: Reuse address socket option enabled" << '\n';
+
+    std::cout << "Success: Reuse address socket option enabled" << std::endl;
 
     if (!bind_socket())
         return false;
+
     if (!listen_socket())
         return false;
+
     if (!setup_epoll())
         return false;
 
     return true;
 }
+
+// bool Server::setup(const char *conf_file)
+// {
+//     int opt;
+
+//     if (!parse_config(conf_file))
+//         return false;
+//     if (!create_socket())
+//         return false;
+//     if (!set_nonblocking(fd))
+//         return false;
+
+//     opt = 1;
+//     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
+//     {
+//         std::cerr << "Error: Couldn't set reuse address socket option: " << strerror(errno) << std::endl;
+//         return false;
+//     }
+//     std::cout << "Success: Reuse address socket option enabled" << '\n';
+
+//     if (!bind_socket())
+//         return false;
+//     if (!listen_socket())
+//         return false;
+//     if (!setup_epoll())
+//         return false;
+
+//     return true;
+// }

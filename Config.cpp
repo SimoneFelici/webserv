@@ -1,11 +1,15 @@
 #include "Config.hpp"
 #include "Server.hpp"
 
+static const char *DEFAULT_ROOT = "./www";
+static const char *DEFAULT_INDEX = "index.html";
+static const size_t DEFAULT_CLIENT_MAX_BODY_SIZE = 1000000;
+
 LocationConfig::LocationConfig() : autoindex(-1), redirect_code(0)
 {
 }
 
-ServerConfig::ServerConfig() : autoindex(-1), max_conn(0), client_max_body_size(0)
+ServerConfig::ServerConfig() : autoindex(-1), client_max_body_size(0)
 {
 }
 
@@ -828,11 +832,12 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
     }
 
     /* valori di default */
+    /* valori di default */
     if (server.root.empty())
-        server.root = "./www";
+        server.root = DEFAULT_ROOT;
 
     if (server.index.empty())
-        server.index = "index.html";
+        server.index = DEFAULT_INDEX;
 
     if (server.autoindex == -1)
         server.autoindex = 0;
@@ -841,7 +846,7 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
         server.allowed_methods.push_back("GET");
 
     if (server.client_max_body_size == 0)
-        server.client_max_body_size = 1000000;
+        server.client_max_body_size = DEFAULT_CLIENT_MAX_BODY_SIZE;
 
     /* controllo duplicati address:port */
     for (size_t j = 0; j < configs.size(); ++j)
@@ -926,7 +931,7 @@ bool Config::parse_config(const std::string &conf_file)
 {
     configs.clear();
     int conf_fd;
-    char buffer[4096];
+    char buffer[CONFIG_BUFFER_SIZE];
     ssize_t bytes_read;
     std::string content;
 

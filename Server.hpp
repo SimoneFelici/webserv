@@ -8,7 +8,9 @@
 #include <sys/epoll.h>
 #include <vector>
 
-// TODO: REMOVE ONCE FINISHED TESTING
+#define SOCKET_BUFFER_SIZE 4096
+#define MAX_EPOLL_EVENTS 1024
+
 #include <ctime>
 #define DEBUG 1
 
@@ -18,7 +20,7 @@ class Server
     Server();
     ~Server();
 
-    bool setup(const char *conf_file);
+    bool setup(const ServerConfig &parsed_config);
     bool run();
 
   private:
@@ -28,11 +30,6 @@ class Server
     bool create_socket();
     bool bind_socket();
     bool listen_socket();
-
-    bool parse_config(const char *conf_file);
-    void set_port(std::string parsed_port);
-    void set_address(std::string parsed_address);
-    void set_max_conn(int parsed_max);
 
     bool setup_epoll();
     bool add_epoll_fd(int fd, uint32_t events);
