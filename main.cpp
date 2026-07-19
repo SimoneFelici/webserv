@@ -16,7 +16,9 @@ int main(int argc, char **argv)
         return 1;
 
     const std::vector<ServerConfig> &configs = conf.getConfigs();
-    if (!server.setup(configs[0]))
+    // if (!server.setup(configs[0]))
+    //     return 1;
+    if (!server.setup(configs))
         return 1;
     
     if (!server.run())
