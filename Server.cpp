@@ -132,7 +132,7 @@ bool Server::modify_epoll_fd(int fd, uint32_t events)
 }
 
 // CLIENT
-bool Server::accept_client(int client_fd,size_t config_index) 
+bool Server::accept_client(int client_fd,size_t config_index)
 {
     if (!set_nonblocking(client_fd))
         return false;
@@ -213,6 +213,21 @@ bool Server::handle_client_read(int client_fd)
         if (!modify_epoll_fd(client_fd, EPOLLOUT))
             return false;
         return true;
+    }
+
+    if (!client.req_done())
+    {
+        std::string cl = client.get_header("content-length");
+        long content_length;
+
+        if (!cl.empty() && string_to_long(cl, content_length) && static_cast<size_t>(content_length) > config.client_max_body_size)
+        {
+            if (!client.prepare_error_response(413, config))
+                return false;
+            if (!modify_epoll_fd(client_fd, EPOLLOUT))
+                return false;
+            return true;
+        }
     }
 
     if (client.req_done())
@@ -337,7 +352,7 @@ bool Server::run()
 
             if (revents & (EPOLLERR | EPOLLHUP))
             {
-                if (is_listening_socket) // se è quello del socket 
+                if (is_listening_socket) // se è quello del socket
                 {
                     std::cerr << "Error: listening socket event failed" << std::endl;
                     close_all_clients();
@@ -407,7 +422,7 @@ bool Server::run()
 //     int client_fd;
 
 //     this->running = true;
-//     epoll_event events[MAX_EPOLL_EVENTS]; 
+//     epoll_event events[MAX_EPOLL_EVENTS];
 
 //     // DEBUG: remove after testing
 //     // time_t start = time(NULL);
@@ -417,7 +432,7 @@ bool Server::run()
 //         // if ((DEBUG) && (time(NULL) - start >= 5))
 //         //     this->running = false;
 
-//         int ready = epoll_wait(this->epoll_fd, events, MAX_EPOLL_EVENTS, -1); 
+//         int ready = epoll_wait(this->epoll_fd, events, MAX_EPOLL_EVENTS, -1);
 //         if (ready == -1)
 //         {
 //             if (errno == EINTR)
@@ -428,7 +443,7 @@ bool Server::run()
 //         }
 //         for (int i = 0; i < ready; ++i)
 //         {
-//             int current_fd = events[i].data.fd;  
+//             int current_fd = events[i].data.fd;
 //             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
 //             {
 //                 std::cerr << "Error: server socket epoll event failed" << std::endl;
@@ -442,7 +457,7 @@ bool Server::run()
 //             }
 //             if (revents & EPOLLIN)
 //             {
-//                 if (current_fd == this->fd) 
+//                 if (current_fd == this->fd)
 //                 {
 //                     client_fd = accept(this->fd, NULL, NULL);
 //                     if (client_fd == -1)
@@ -466,7 +481,7 @@ bool Server::run()
 //                     }
 //                 }
 //             }
-//            
+//
 //             if (revents & EPOLLOUT)
 //             {
 //                 if (current_fd != this->fd)
