@@ -1,5 +1,5 @@
-#include "Server.hpp"
 #include "Config.hpp"
+#include "Server.hpp"
 #include "webserv.hpp"
 
 Server::Server() : running(false), epoll_fd(-1)
@@ -62,11 +62,11 @@ bool Server::bind_socket(int server_fd, const ServerConfig &config)
         return false;
     }
     // Esegue il bind sul socket corrente.
-// Ogni listening socket viene quindi associato
-// alla propria coppia address:port.
+    // Ogni listening socket viene quindi associato
+    // alla propria coppia address:port.
     if (bind(server_fd, res->ai_addr, res->ai_addrlen) == -1)
     {
-        std::cerr << "Error: couldn't bind " << config.address << ":"<< config.port << ": " << strerror(errno) << std::endl;
+        std::cerr << "Error: couldn't bind " << config.address << ":" << config.port << ": " << strerror(errno) << std::endl;
         freeaddrinfo(res);
         return false;
     }
@@ -132,7 +132,7 @@ bool Server::modify_epoll_fd(int fd, uint32_t events)
 }
 
 // CLIENT
-bool Server::accept_client(int client_fd,size_t config_index)
+bool Server::accept_client(int client_fd, size_t config_index)
 {
     if (!set_nonblocking(client_fd))
         return false;
@@ -172,8 +172,8 @@ bool Server::handle_client_read(int client_fd)
     if (client_it == this->clients.end())
         return false;
 
-        // Cerchiamo l'indice della configurazione
-// precedentemente associata a questo client.
+    // Cerchiamo l'indice della configurazione
+    // precedentemente associata a questo client.
     std::map<int, size_t>::iterator config_it = this->client_configs.find(client_fd);
 
     if (config_it == this->client_configs.end())
@@ -200,7 +200,19 @@ bool Server::handle_client_read(int client_fd)
     }
 
     if (!client.has_full_headers(temp, bytes_read))
+    {
+        if (client.is_headers_too_large())
+        {
+            if (!client.prepare_error_response(431, config))
+                return false;
+            if (DEBUG)
+                client.print_response();
+            if (!modify_epoll_fd(client_fd, EPOLLOUT))
+                return false;
+            return true;
+        }
         return true;
+    }
 
     client.parse_request();
 
@@ -328,7 +340,7 @@ bool Server::handle_client_write(int client_fd)
 bool Server::run()
 {
     this->running = true;
-    epoll_event events[MAX_EPOLL_EVENTS];// array dove epoll_wait() scriverà gli eventi pronti.
+    epoll_event events[MAX_EPOLL_EVENTS]; // array dove epoll_wait() scriverà gli eventi pronti.
 
     while (this->running)
     {
@@ -338,14 +350,14 @@ bool Server::run()
             if (errno == EINTR)
                 continue;
 
-            std::cerr << "Error: epoll_wait failed: "  << strerror(errno) << std::endl;
+            std::cerr << "Error: epoll_wait failed: " << strerror(errno) << std::endl;
             close_all_clients();
             return false;
         }
 
         for (int i = 0; i < ready; ++i)
         {
-            int current_fd = events[i].data.fd; // current_fd è il fd su cui è successo qualcosa.
+            int current_fd = events[i].data.fd;  // current_fd è il fd su cui è successo qualcosa.
             uint32_t revents = events[i].events; // revents contiene cosa è successo:
             std::map<int, size_t>::iterator listener_it = this->listening_sockets.find(current_fd);
             bool is_listening_socket = listener_it != this->listening_sockets.end();
@@ -400,7 +412,7 @@ bool Server::run()
                     continue;
                 }
             }
-             // DA IMPLEMENTARE
+            // DA IMPLEMENTARE
             if ((revents & EPOLLOUT) &&
                 !is_listening_socket)
             {
@@ -501,7 +513,7 @@ bool Server::setup(const std::vector<ServerConfig> &parsed_configs)
     if (parsed_configs.empty())
     {
         std::cerr << "Error: no server configurations provided" << std::endl;
-            return false;
+        return false;
     }
 
     this->configs = parsed_configs;
