@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <climits>
 
 bool set_nonblocking(int fd)
 {
@@ -74,7 +75,7 @@ int read_file(const std::string &file_path, std::string &body)
 
     body.clear();
 
-    char buffer[4096];
+    char buffer[FILE_BUFFER_SIZE];
     ssize_t bytes_read;
 
     while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0)
@@ -88,4 +89,27 @@ int read_file(const std::string &file_path, std::string &body)
 
     close(fd);
     return 200;
+}
+
+bool string_to_long(const std::string &value, long &result)
+{
+    result = 0;
+
+    if (value.empty())
+        return false;
+
+    for (size_t i = 0; i < value.size(); ++i)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(value[i])))
+            return false;
+
+        int digit = value[i] - '0';
+
+        if (result > (LONG_MAX - digit) / 10)
+            return false;
+
+        result = result * 10 + digit;
+    }
+
+    return true;
 }

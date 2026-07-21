@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "webserv.hpp"
+#include "Config.hpp"
 
 int main(int argc, char **argv)
 {
@@ -9,9 +10,21 @@ int main(int argc, char **argv)
         return 1;
     }
     Server server;
-
-    if (!server.setup(argv[1]))
+    Config conf;
+    //testing parsing config
+    if (!conf.parse_config(argv[1]))
         return 1;
+
+    const std::vector<ServerConfig> &configs = conf.getConfigs();
+    // if (!server.setup(configs[0]))
+    //     return 1;
+    if (!server.setup(configs))
+        return 1;
+    
     if (!server.run())
         return 1;
+
+    return 0;
+    
+
 }

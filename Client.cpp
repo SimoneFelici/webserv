@@ -1,7 +1,7 @@
 #include "Client.hpp"
+#include "Config.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
-#include <dirent.h>
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
 
@@ -25,16 +25,19 @@ const std::string &Client::get_request() const
     return this->request_buffer;
 }
 
-bool Client::prepare_error_response(int error_code)
+bool Client::prepare_error_response(int error_code, const ServerConfig &config)
 {
     if (!this->clear_response())
         return false;
 
     this->res.headers.clear();
+
     if (this->req.version.empty())
         this->req.version = "HTTP/1.1";
-    build_error_response(error_code);
+
+    build_error_response(error_code, config, NULL);
     build_response_buffer();
+
     return true;
 }
 
@@ -306,24 +309,11 @@ void Client::build_response_buffer()
     this->bytes_sent = 0;
 }
 
-void Client::build_error_response(int error_code)
+void Client::build_default_error_response(int error_code)
 {
-    std::string reason;
-    std::map<int, std::string> Errorcodes;
-    Errorcodes[400] = "Bad Request";
-    Errorcodes[403] = "Forbidden";
-    Errorcodes[404] = "Not Found";
-    Errorcodes[405] = "Method Not Allowed";
-    Errorcodes[413] = "Payload Too Large";
-    Errorcodes[500] = "Internal Server Error";
-    Errorcodes[505] = "HTTP Version Not Supported";
+    std::string reason = get_error_reason(error_code);
 
-    std::map<int, std::string>::iterator it = Errorcodes.find(error_code);
-    if (it != Errorcodes.end())
-    {
-        reason = it->second;
-    }
-    else
+    if (reason == "Internal Server Error" && error_code != 500)
     {
         error_code = 500;
         reason = "Internal Server Error";
@@ -334,9 +324,74 @@ void Client::build_error_response(int error_code)
     this->res.content_type = "text/html";
 
     std::stringstream body;
-    body << "<html><body><h1>" << error_code << " " << reason << "</h1></body></html>";
+
+    body << "<html>" << "<head><title>" << error_code << " " << reason << "</title></head>" << "<body>" << "<h1>" << error_code << " " << reason << "</h1>" << "</body>" << "</html>";
 
     this->res.body = body.str();
+}
+
+std::string Client::get_error_reason(int error_code) const
+{
+    std::map<int, std::string> error_codes;
+
+    error_codes[400] = "Bad Request";
+    error_codes[403] = "Forbidden";
+    error_codes[404] = "Not Found";
+    error_codes[405] = "Method Not Allowed";
+    error_codes[413] = "Payload Too Large";
+    error_codes[500] = "Internal Server Error";
+    error_codes[501] = "Not Implemented";
+    error_codes[502] = "Internal Server Error";
+    error_codes[505] = "HTTP Version Not Supported";
+
+    std::map<int, std::string>::const_iterator it = error_codes.find(error_code);
+
+    if (it == error_codes.end())
+        it = error_codes.find(500);
+
+    return it->second;
+}
+void Client::build_error_response(int error_code, const ServerConfig &config, const LocationConfig *loc)
+{
+    std::string error_page_path;
+    std::map<int, std::string>::const_iterator it;
+
+    /* Prima controlliamo la location più specifica.*/
+    if (loc)
+    {
+        it = loc->error_pages.find(error_code);
+
+        if (it != loc->error_pages.end())
+            error_page_path = it->second;
+    }
+
+    /*Se la location non ha una pagina per questo errore, controlliamo la configurazione del server.*/
+    if (error_page_path.empty())
+    {
+        it = config.error_pages.find(error_code);
+
+        if (it != config.error_pages.end())
+            error_page_path = it->second;
+    }
+
+    /*Se è stata configurata una pagina, proviamo a leggerla.*/
+    if (!error_page_path.empty())
+    {
+        std::string body;
+        int read_status = read_file(error_page_path, body);
+
+        if (read_status == 200)
+        {
+            this->res.status_code = error_code;
+            this->res.reason = get_error_reason(error_code);
+            this->res.content_type = get_content_type(error_page_path);
+            this->res.body = body;
+            return;
+        }
+    }
+
+    /* Nessuna pagina configurata, oppure file non leggibile: usiamo la pagina HTML interna. */
+    build_default_error_response(error_code);
 }
 
 /* prende una stringa e la rende sicura da stampare dentro una pagina HTML. Se trova caratteri speciali HTML, li sostituisce. */
@@ -360,7 +415,7 @@ static std::string html_escape(const std::string &s)
     return escaped;
 }
 /* Questa funzione serve solo nell’autoindex, dentro build_autoindex_body(), serve a costruire l’href.
-*/
+ */
 static std::string join_url_path(const std::string &base, const std::string &name)
 {
     if (base.empty())
@@ -388,7 +443,7 @@ static int build_autoindex_body(const std::string &dir_path, const std::string &
     std::stringstream ss;
     ss << "<html><body><h1>Index of " << html_escape(request_path) << "</h1><ul>";
 
-    struct dirent *entry; // Poi con quel dir puoi leggere le entries:
+    struct dirent *entry;                  // Poi con quel dir puoi leggere le entries:
     while ((entry = readdir(dir)) != NULL) // Legge una voce alla volta dalla directory.
     {
         std::string name = entry->d_name;
@@ -396,7 +451,7 @@ static int build_autoindex_body(const std::string &dir_path, const std::string &
         if (name == ".")
             continue;
         /*
-        html_escape(request_path) serve a trasformare alcuni caratteri speciali in testo “sicuro” da mettere dentro HTML. 
+        html_escape(request_path) serve a trasformare alcuni caratteri speciali in testo “sicuro” da mettere dentro HTML.
         Se request_path contiene caratteri tipo < o >, il browser può interpretarli come tag HTML.
         */
         ss << "<li><a href=\"" << html_escape(join_url_path(request_path, name)) << "\">" << html_escape(name) << "</a></li>";
@@ -438,20 +493,20 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
 {
     std::string file_path; // file_path: sarà il path reale sul filesystem.
     std::string directory_path;
-    std::string index; // index: nome del file index, tipo index.html.
-    struct stat file_stat;  // file_stat: struct riempita da stat() per capire se il path esiste, se è file, directory, ecc.
+    std::string index;     // index: nome del file index, tipo index.html.
+    struct stat file_stat; // file_stat: struct riempita da stat() per capire se il path esiste, se è file, directory, ecc.
 
     file_path = build_file_path(config, loc); // costruisce il path reale. Qui trasforma l’URL richiesto in path filesystem.
 
-    //Controlla se il path esiste: stat() prova a leggere informazioni sul path.
+    // Controlla se il path esiste: stat() prova a leggere informazioni sul path.
     if (stat(file_path.c_str(), &file_stat) == -1)
     {
         if (errno == EACCES) // non ho permessi -> 403
-            build_error_response(403);
+            build_error_response(403, config, loc);
         else if (errno == ENOENT || errno == ENOTDIR) // non esiste o un pezzo del path non è directory
-            build_error_response(404);
+            build_error_response(404, config, loc);
         else
-            build_error_response(500); // errore interno
+            build_error_response(500, config, loc); // errore interno
         return true;
     }
 
@@ -472,24 +527,24 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
         if (stat(file_path.c_str(), &file_stat) == -1)
         {
             if (errno == EACCES) // Se non puoi accedere all’index: 403
-                build_error_response(403);
+                build_error_response(403, config, loc);
             else if (errno == ENOENT || errno == ENOTDIR) // Se l’index non esiste, Sceglie se autoindex è attivo:
             {
                 /*
                 se c’è una location -> usa loc->autoindex
                 altrimenti -> usa config.autoindex
                 */
-                bool autoindex = config.autoindex;
-                if (loc)
-                    autoindex = loc->autoindex;
-                if (!autoindex) // Se autoindex è off 403
-                    build_error_response(403);
+                int autoindex_value = config.autoindex;
+                if (loc && loc->autoindex != -1)
+                    autoindex_value = loc->autoindex;
+                if (autoindex_value != 1) // Se autoindex è off 403
+                    build_error_response(403, config, loc);
                 else
                 {
                     // Se autoindex è on, genera il body HTML della directory listing.
                     this->res.status_code = build_autoindex_body(directory_path, this->get_path(), this->res.body);
                     if (this->res.status_code != 200)
-                        build_error_response(this->res.status_code);
+                        build_error_response(this->res.status_code, config, loc);
                     else
                     {
                         this->res.reason = "OK";
@@ -498,7 +553,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
                 }
             }
             else
-                build_error_response(500);
+                build_error_response(500, config, loc);
             return true;
         }
     }
@@ -506,7 +561,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     // Verifica che il path finale sia un file normale
     if (!S_ISREG(file_stat.st_mode))
     {
-        build_error_response(403);
+        build_error_response(403, config, loc);
         return true;
     }
 
@@ -524,7 +579,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     this->res.status_code = read_file(file_path, this->res.body);
     // Se la lettura fallisce, costruisce errore
     if (this->res.status_code != 200)
-        build_error_response(this->res.status_code);
+        build_error_response(this->res.status_code, config, loc);
 
     return true;
 }
@@ -598,7 +653,6 @@ int Client::sanitize_path()
         path += "/";
     return 0;
 }
-
 int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
 {
     if (this->get_version() != "HTTP/1.1")
@@ -611,6 +665,7 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     loc = match_location(config);
 
     const std::vector<std::string> *allowed;
+
     if (loc && !loc->allowed_methods.empty())
         allowed = &loc->allowed_methods;
     else
@@ -619,17 +674,34 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     if (!is_method_allowed(*allowed))
     {
         std::string allow;
+
         for (size_t i = 0; i < allowed->size(); ++i)
         {
             if (i > 0)
                 allow += ", ";
             allow += (*allowed)[i];
         }
+
         this->res.headers["Allow"] = allow;
         return 405;
     }
 
-    // TODO: Content-Length / body size limit -> 413
+    if (this->req.headers.count("content-length"))
+    {
+        long content_length;
+
+        if (!string_to_long(
+                this->req.headers["content-length"],
+                content_length))
+            return 400;
+
+        if (content_length < 0)
+            return 400;
+
+        if (static_cast<size_t>(content_length) >
+            config.client_max_body_size)
+            return 413;
+    }
 
     return 0;
 }
@@ -646,7 +718,7 @@ bool Client::prepare_response(ServerConfig &config)
 
     if (status != 0)
     {
-        build_error_response(status);
+        build_error_response(status, config, loc);
         build_response_buffer();
         return true;
     }
@@ -658,7 +730,7 @@ bool Client::prepare_response(ServerConfig &config)
     // else if (this->get_method() == "DELETE")
     //     handle_delete(config);
     else
-        build_error_response(501);
+        build_error_response(501, config, loc);
 
     build_response_buffer();
     return true;

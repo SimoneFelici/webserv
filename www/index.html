@@ -1,5 +1,22 @@
-<html>
-  <body>
-    <h1>Home page webserv</h1>
-  </body>
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Webserv test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.5; }
+        code { background: #eee; padding: 2px 5px; }
+        a { display: block; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>GET base funzionante ✅</h1>
+    <p>Questa pagina arriva da <code>./www/index.html</code>.</p>
+
+    <h2>Test rapidi</h2>
+    <a href="/hello.txt">GET di un file di testo</a>
+    <a href="/missing-page">404 personalizzato del server</a>
+    <a href="/special/">GET della location /special</a>
+    <a href="/special/missing">404 personalizzato della location</a>
+</body>
 </html>
