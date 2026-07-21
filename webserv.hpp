@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #define FILE_BUFFER_SIZE 4096
+#define MAX_HEADER_SIZE (8 * 1024)
 
 bool set_nonblocking(int fd);
 int read_file(const std::string &file_path, std::string &body);

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdlib>
+#include <dirent.h> // ??
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
-#include <vector>
-#include <dirent.h> // ?? 
 #include <sys/stat.h>
+#include <vector>
 
 struct ServerConfig;
 struct LocationConfig;
@@ -41,19 +41,20 @@ class Client
     const std::string &get_version() const;
     const std::string &get_body() const;
     std::string get_header(const std::string &key) const;
-    
+    bool is_headers_too_large() const;
+
     // Response
     bool clear_response();
     bool prepare_response(ServerConfig &config);
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
-    
+
     bool is_allowed_method(ServerConfig &config);
-    
+
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
-    
+
   private:
     struct HttpRequest
     {
@@ -100,6 +101,8 @@ class Client
     HttpRequest req;
     HttpResponse res;
 
+    bool headers_too_large;
+
     std::string get_error_reason(int error_code) const;
 
     bool parse_request_line(std::size_t &pos);
@@ -109,7 +112,6 @@ class Client
     void build_error_response(int error_code, const ServerConfig &config, const LocationConfig *loc);
     void build_default_error_response(int error_code);
     void build_response_buffer();
-
 
     const LocationConfig *match_location(const ServerConfig &config) const;
     bool is_method_allowed(const std::vector<std::string> &allowed) const;

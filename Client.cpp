@@ -3,9 +3,9 @@
 #include "Server.hpp"
 #include "webserv.hpp"
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -23,6 +23,11 @@ void Client::set_fd(int fd)
 const std::string &Client::get_request() const
 {
     return this->request_buffer;
+}
+
+bool Client::is_headers_too_large() const
+{
+    return (this->headers_too_large);
 }
 
 bool Client::prepare_error_response(int error_code, const ServerConfig &config)
@@ -61,10 +66,14 @@ void Client::print_response() const
     std::cout << "---------" << std::endl;
 }
 
-// TODO: maybe add a limit?
 bool Client::has_full_headers(const char *data, size_t len)
 {
     this->request_buffer.append(data, len);
+    if (this->request_buffer.size() > MAX_HEADER_SIZE)
+    {
+        this->headers_too_large = true;
+        return false;
+    }
     return this->request_buffer.find("\r\n\r\n") != std::string::npos;
 }
 
@@ -339,6 +348,7 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[404] = "Not Found";
     error_codes[405] = "Method Not Allowed";
     error_codes[413] = "Payload Too Large";
+    error_codes[431] = "Request Header Fields Too Large";
     error_codes[500] = "Internal Server Error";
     error_codes[501] = "Not Implemented";
     error_codes[502] = "Internal Server Error";
