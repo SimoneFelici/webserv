@@ -1,4 +1,5 @@
 #include "webserv.hpp"
+#include <cctype>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -33,24 +34,33 @@ std::string trim(const std::string &s)
 std::string get_content_type(const std::string &file_path)
 {
     // TODO: add more extensions, especially when adding CGI
-    std::map<std::string, std::string> mime;
-    mime["html"] = "text/html";
-    mime["css"] = "text/css";
-    mime["js"] = "application/javascript";
-    mime["png"] = "image/png";
-    mime["jpg"] = "image/jpeg";
-    mime["jpeg"] = "image/jpeg";
-    mime["gif"] = "image/gif";
-    mime["svg"] = "image/svg+xml";
-    mime["ico"] = "image/x-icon";
-    mime["txt"] = "text/plain";
-    mime["pdf"] = "application/pdf";
-    mime["json"] = "application/json";
+    static std::map<std::string, std::string> mime;
+    if (mime.empty())
+    {
+        mime["html"] = "text/html";
+        mime["css"] = "text/css";
+        mime["js"] = "application/javascript";
+        mime["png"] = "image/png";
+        mime["jpg"] = "image/jpeg";
+        mime["jpeg"] = "image/jpeg";
+        mime["gif"] = "image/gif";
+        mime["svg"] = "image/svg+xml";
+        mime["ico"] = "image/x-icon";
+        mime["txt"] = "text/plain";
+        mime["pdf"] = "application/pdf";
+        mime["json"] = "application/json";
+    }
 
-    // TODO: add validation
     size_t dot = file_path.rfind('.');
+    std::string::size_type slash = file_path.find_last_of('/');
+
+    if (dot == std::string::npos || dot + 1 == file_path.size())
+        return "application/octet-stream";
+    if (slash != std::string::npos && (dot < slash || dot == slash + 1))
+        return "application/octet-stream";
 
     std::string ext = file_path.substr(dot + 1);
+    to_lower(ext);
 
     std::map<std::string, std::string>::const_iterator it = mime.find(ext);
     if (it == mime.end())
