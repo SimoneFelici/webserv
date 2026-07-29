@@ -706,6 +706,31 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     return 0;
 }
 
+void Client::build_redirect_response(const LocationConfig &loc)
+{
+    this->res.status_code = loc.redirect_code;
+
+    if (loc.redirect_code == 301)
+        this->res.reason = "Moved Permanently";
+    else if (loc.redirect_code == 302)
+        this->res.reason = "Found";
+    else if (loc.redirect_code == 303)
+        this->res.reason = "See Other";
+    else if (loc.redirect_code == 307)
+        this->res.reason = "Temporary Redirect";
+    else if (loc.redirect_code == 308)
+        this->res.reason = "Permanent Redirect";
+    else
+    {
+        build_default_error_response(500);
+        return;
+    }
+
+    this->res.content_type = "text/html";
+    this->res.body.clear();
+    this->res.headers["Location"] = loc.redirect_url;
+}
+
 bool Client::prepare_response(ServerConfig &config)
 {
 
@@ -719,6 +744,13 @@ bool Client::prepare_response(ServerConfig &config)
     if (status != 0)
     {
         build_error_response(status, config, loc);
+        build_response_buffer();
+        return true;
+    }
+
+    if (loc && loc->redirect_code != 0)
+    {
+        build_redirect_response(*loc);
         build_response_buffer();
         return true;
     }
