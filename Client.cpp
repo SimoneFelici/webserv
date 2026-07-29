@@ -69,12 +69,26 @@ void Client::print_response() const
 bool Client::has_full_headers(const char *data, size_t len)
 {
     this->request_buffer.append(data, len);
+
+    size_t headers_end = this->request_buffer.find("\r\n\r\n");
+
+    if (headers_end != std::string::npos)
+    {
+        if (headers_end + 4 > MAX_HEADER_SIZE)
+        {
+            this->headers_too_large = true;
+            return false;
+        }
+        return true;
+    }
+
     if (this->request_buffer.size() > MAX_HEADER_SIZE)
     {
         this->headers_too_large = true;
         return false;
     }
-    return this->request_buffer.find("\r\n\r\n") != std::string::npos;
+
+    return false;
 }
 
 void Client::clear_request()

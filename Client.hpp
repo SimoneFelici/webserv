@@ -50,8 +50,6 @@ class Client
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
 
-    bool is_allowed_method(ServerConfig &config);
-
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
 
