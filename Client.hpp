@@ -112,6 +112,7 @@ class Client
     void build_error_response(int error_code, const ServerConfig &config, const LocationConfig *loc);
     void build_default_error_response(int error_code);
     void build_response_buffer();
+    void build_redirect_response(const LocationConfig &loc);
 
     const LocationConfig *match_location(const ServerConfig &config) const;
     bool is_method_allowed(const std::vector<std::string> &allowed) const;
