@@ -608,6 +608,85 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
+bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
+{
+    if (!loc) // Controlla che esista una location
+    {
+        build_error_response(404, config, loc);
+        return true;
+    }
+
+    if (loc->upload_path.empty()) // Controlla che la location abbia una cartella upload
+    {
+        build_error_response(403, config, loc);
+        return true;
+    }
+
+    if (this->req.body.empty()) // Controlla che ci sia un body
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    struct stat upload_stat;
+
+    if (stat(loc->upload_path.c_str(), &upload_stat) == -1) // Questo path esiste? E che tipo di elemento è?
+    {
+        {
+            std::cerr << "UPLOAD PATH: [" << loc->upload_path << "]" << std::endl;
+            std::cerr << "STAT ERROR: " << strerror(errno) << std::endl;
+
+            if (errno == EACCES)
+                build_error_response(403, config, loc);
+            else
+                build_error_response(500, config, loc);
+
+            return true;
+        }
+    }
+
+    if (!S_ISDIR(upload_stat.st_mode)) // controlla che sia davvero una directory
+    {
+        build_error_response(500, config, loc);
+        return true;
+    }
+
+    std::string request_path = this->get_path();
+    std::string file_name;
+
+    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    file_name = request_path.substr(loc->path.size());
+
+    if (!file_name.empty() && file_name[0] == '/')
+        file_name.erase(0, 1);
+
+    // Validiamo il nome
+    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    std::string file_path = loc->upload_path;
+
+    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+        file_path += "/";
+
+    file_path += file_name;
+
+    this->res.status_code = 200;
+    this->res.reason = "OK";
+    this->res.content_type = "text/plain";
+    this->res.body = "File target: " + file_path + "\n";
+
+    return true;
+}
+
 const LocationConfig *Client::match_location(const ServerConfig &config) const
 {
     const LocationConfig *best = NULL;
@@ -781,8 +860,8 @@ bool Client::prepare_response(ServerConfig &config)
 
     if (this->get_method() == "GET")
         handle_get_req(config, loc);
-    // else if (this->get_method() == "POST")
-    //     handle_post(config);
+    else if (this->get_method() == "POST")
+        handle_post_req(config, loc);
     // else if (this->get_method() == "DELETE")
     //     handle_delete(config);
     else

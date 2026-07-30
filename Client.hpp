@@ -52,6 +52,7 @@ class Client
 
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
+    bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
 
   private:
     struct HttpRequest

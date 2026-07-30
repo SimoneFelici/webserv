@@ -12,12 +12,12 @@ NB: bug nella lettura delle richieste: client_max_body_size viene controllato in
  Correggere il main e chiamare server.run().
  Sostituire 4096 e 1024 con macro tecniche nominate.
  Applicare client_max_body_size.
-
- DA FARE:
  Usare le error_page personalizzate del server.
  Usare le error_page personalizzate della location.
  Lasciare la pagina errore HTML interna come fallback.
  Applicare i redirect configurati con return.
+
+ DA FARE:
  Controllare eventuali altri valori parsati ma mai utilizzati.
  Ripulire TODO vecchi e codice commentato non più utile.
 
@@ -48,6 +48,7 @@ FATTO!
 
 
 **TODO — Multi-server ed epoll**
+FATTO:
  Smettere di usare solo configs[0].
  Creare un listening socket per ogni ServerConfig.
  Usare un solo epoll_fd per tutti i server e tutti i client.
@@ -57,57 +58,97 @@ FATTO!
  Quando arriva un client, ricordare da quale server è stato accettato.
  Associare ogni Client alla config corretta.
  Usare la config corretta in prepare_response().
- Gestire errori su un singolo listening socket senza chiudere inutilmente tutto.
  Chiudere correttamente tutti i server fd nel distruttore.
  Testare due server su porte diverse con contenuti diversi.
 
+ DA FARE:
+ Gestire errori su un singolo listening socket senza chiudere inutilmente tutto.
+
 
 **TODO — Request parsing**
- Gestire richieste ricevute in più recv().
- Evitare di aspettare solo \r\n\r\n quando esiste un body.
- Controllare Content-Length prima di accumulare un body enorme.
- Gestire richieste senza body correttamente.
- Gestire Transfer-Encoding: chunked.
- Rifiutare richieste con Content-Length invalido.
- Gestire conflitto tra Content-Length e Transfer-Encoding.
- Gestire header duplicati correttamente.
- Imporre un limite alla dimensione degli header.
- Gestire URL con query string.
- Separare path e query.
- Decodificare o validare il percent encoding.
- Migliorare la validazione della request line.
- Gestire disconnessione durante una request incompleta.
- Gestire timeout per richieste incomplete.
+Fatto
+Gestire richieste ricevute in più recv().
+Non considerare completa la request finché non è arrivato tutto il body dichiarato.
+Gestire richieste senza body.
+Leggere e validare Content-Length.
+Rifiutare un Content-Length vuoto, non numerico o troppo lungo.
+Imporre un limite alla dimensione degli header.
+Richiedere l’header Host.
+Validare la request line di base:
+metodo presente;
+path presente e iniziato da /;
+versione nel formato HTTP/...;
+niente campi extra nella prima riga.
+Accumulare correttamente un body spezzato su più recv().
+
+DA fare.
+Controllare client_max_body_size prima di accumulare un body enorme.
+Transfer-Encoding: chunked.
+Conflitto tra Content-Length e Transfer-Encoding.
+Gestione corretta degli header duplicati.
+Query string:
+separare /pagina?x=1 in path e query;
+non cercare sul filesystem un file chiamato pagina?x=1.
+Percent encoding, per esempio %20.
+Migliorare ulteriormente la validazione della request line.
+Timeout per richieste incomplete.
+Gestione precisa di disconnessioni ed errori temporanei di recv().
 
 **TODO — Response HTTP**
- Usare reason phrase centralizzate.
- Gestire pagine errore configurate.
- Implementare redirect con header Location.
- Controllare che Content-Length sia sempre corretto.
- Decidere gestione Connection: close e keep-alive.
- Aggiungere header necessari.
- Evitare header duplicati.
- Gestire correttamente risposte senza body.
- Verificare codici HTTP con NGINX.
- Gestire errori di send() non bloccante, inclusi invii parziali.
+FATTO:
+status line corretta, per esempio HTTP/1.1 200 OK;
+Content-Type;
+Content-Length calcolato dal body;
+header aggiuntivi tramite res.headers;
+Connection: close;
+redirect con header Location;
+pagine di errore configurate;
+fallback HTML interno;
+gestione degli invii parziali con bytes_sent;
+risposta senza body per il redirect.
+
+DA FARE:
+aggiungere tutte le reason phrase necessarie;
+gestire bene 201, 204, 409;
+distinguere gli errori temporanei di send();
+controllare eventuali header duplicati;
+decidere se mantenere solo Connection: close oppure supportare keep-alive;
+confrontare alcuni status e header con NGINX;
+verificare che tutte le risposte senza body abbiano davvero Content-Length: 0
 
 **TODO — GET**
 FATTO
  Match della location più specifica.
- Scelta root server/location.
- Scelta index server/location.
- Gestione autoindex.
- Lettura file statici.
- Content type di base.
+Scelta del root della location, con fallback sul root del server.
+Scelta dell’index della location, con fallback sull’index del server.
+Costruzione del path reale sul filesystem.
+Controllo dell’esistenza del path con stat().
+Distinzione tra file regolare e directory.
+Lettura e restituzione di file statici.
+Gestione delle directory tramite file index.
+Gestione autoindex on.
+Gestione autoindex off.
+Content-Type di base in base all’estensione.
+Errori 403, 404 e 500.
+Error page personalizzata della location.
+Fallback sull’error page personalizzata del server.
+Fallback finale sulla pagina HTML interna.
+Redirect configurato prima della gestione GET.
+Matching corretto tra /old e /old/..., senza confondere /older.
+Sanitizzazione basilare dei segmenti . e ..
 
 DA FARE:
- Gestire redirect delle directory senza slash finale.
- Migliorare protezione dal path traversal.
- Gestire query string senza includerla nel path filesystem.
- Gestire file senza estensione in get_content_type().
- Ampliare MIME types.
- Verificare differenza tra root e comportamento delle location.
- Usare error pages configurate anche negli errori GET.
+Gestire le query string separando:
+path, per esempio /index.html;
+query, per esempio x=1.
+Gestire il redirect delle directory senza slash finale:
+/special → /special/.
+Validare o decodificare il percent encoding:
+per esempio %20.
+Migliorare ulteriormente la protezione dal path traversal.
+Ampliare i MIME type, se necessario.
+Fare un test esplicito dell’error page specifica della location.
+Confrontare alcuni comportamenti con NGINX, soprattutto directory e query string.
 
 **TODO — POST e upload**
  Implementare POST.
