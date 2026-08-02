@@ -221,3 +221,153 @@ Confrontare alcuni comportamenti con NGINX, soprattutto directory e query string
  Test con Valgrind.
  Test confronto con NGINX.
 
+
+# Recap:
+
+**1. Legge il file .conf**
+
+```
+file di configurazione
+        ↓
+Config::parse()
+        ↓
+std::vector<ServerConfig> configs
+
+Esempio:
+configs[0] = server porta 8081, root ./www
+configs[1] = server porta 8082, root ./www2
+```
+
+**2. Crea i listening socket**
+Per ogni configurazione:
+```
+configs[i]
+   ↓
+socket()
+bind()
+listen()
+   ↓
+listening fd
+
+Poi salva:
+listening_sockets[server_fd] = i;
+
+Esempio:
+fd 3 → configs[0]
+fd 4 → configs[1]
+```
+
+**3. Arriva una connessione**
+epoll_wait() restituisce un fd.
+
+```
+current_fd
+    ↓
+è dentro listening_sockets?
+Se sì, è un socket che sta ascoltando.
+
+Esempio:
+current_fd = 3
+listening_sockets[3] = 0
+
+Quindi sappiamo:
+la connessione sta arrivando sul server configs[0]
+```
+
+**4. Accetta il client**
+
+```
+client_fd = accept(current_fd, ...);
+
+Esempio:
+accept sul fd 3
+        ↓
+nuovo client fd 7
+
+A quel punto salva due cose:
+clients[7] = Client(7);
+client_configs[7] = 0;
+
+Quindi:
+clients[7] = oggetto Client del fd 7
+
+client_configs[7] = il client 7 usa configs[0]
+```
+
+# Schema visivo completo
+```txt
+CONFIG FILE
+    ↓
+Config::parse()
+    ↓
+configs
+┌───────────┬────────────────────────┐
+│ index 0   │ porta 8081, root ./www │
+│ index 1   │ porta 8082, root ./www2│
+└───────────┴────────────────────────┘
+    ↓
+setup socket
+    ↓
+listening_sockets
+┌───────────┬──────────────┐
+│ fd 3      │ config 0     │
+│ fd 4      │ config 1     │
+└───────────┴──────────────┘
+    ↓
+arriva connessione su fd 3
+    ↓
+accept()
+    ↓
+nuovo client fd 7
+    ↓
+┌────────────────────────────┐
+│ clients[7] = Client fd 7   │
+│ client_configs[7] = 0      │
+└────────────────────────────┘
+    ↓
+il client fd 7 usa configs[0]
+```
+
+# Quando arriva una request
+Quando epoll restituisce il fd del client:  
+current_fd = 7  
+Il server fa:
+Client &client = clients[7];  
+Poi recupera la configurazione:  
+size_t index = client_configs[7];  
+ServerConfig &config = configs[index];  
+
+Quindi:
+```
+clients[7]
+    ↓
+contiene request, body, response
+
+client_configs[7]
+    ↓
+restituisce 0
+
+configs[0]
+    ↓
+contiene root, location, error page, metodi...
+
+Infine:
+client.prepare_response(configs[0]);
+```
+
+### Esempio finale
+```
+fd 3 ascolta sulla porta 8081
+listening_sockets[3] = 0
+
+accept(fd 3) restituisce fd 7
+client_configs[7] = 0
+clients[7] = Client(7)
+
+arriva una GET sul fd 7
+→ recupero clients[7]
+→ recupero client_configs[7]
+→ vale 0
+→ uso configs[0]
+→ cerco file nella root di configs[0]
+```

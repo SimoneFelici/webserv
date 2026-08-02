@@ -608,6 +608,50 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
+int Client::write_uploaded_file(const std::string &file_path)
+{
+    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // sono i permessi da assegnare al file quando viene creato:
+
+    if (file_fd == -1)
+    {
+        if (errno == EACCES) // EACCES significa accesso negato.
+            return 403;
+        return 500;
+    }
+
+    const std::string &body = this->req.body;
+    size_t total_written = 0; // tiene traccia del numero di byte già scritti.x
+
+    while (total_written < body.size())
+    {
+        //write(file_descriptor, dati_da_scrivere, numero_di_byte);
+        ssize_t written = write(file_fd, body.c_str() + total_written, body.size() - total_written);
+
+        if (written == -1)
+        {
+            int saved_errno = errno; // Ho salvato errno perché close() potrebbe modificarlo e farti perdere la causa reale dell’errore di write().
+            close(file_fd);
+
+            if (saved_errno == EACCES)
+                return 403;
+            return 500;
+        }
+
+        if (written == 0)
+        {
+            close(file_fd);
+            return 500;
+        }
+
+        total_written += static_cast<size_t>(written);
+    }
+
+    if (close(file_fd) == -1)
+        return 500;
+
+    return 201;
+}
+
 bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 {
     if (!loc) // Controlla che esista una location
@@ -679,10 +723,18 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 
     file_path += file_name;
 
-    this->res.status_code = 200;
-    this->res.reason = "OK";
+    int upload_status = write_uploaded_file(file_path);
+
+    if (upload_status != 201)
+    {
+        build_error_response(upload_status, config, loc);
+        return true;
+    }
+
+    this->res.status_code = 201;
+    this->res.reason = "Created";
     this->res.content_type = "text/plain";
-    this->res.body = "File target: " + file_path + "\n";
+    this->res.body = "File uploaded successfully\n";
 
     return true;
 }
