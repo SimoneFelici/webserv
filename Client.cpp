@@ -30,6 +30,11 @@ bool Client::is_headers_too_large() const
     return (this->headers_too_large);
 }
 
+const std::string &Client::get_query_string() const
+{
+    return this->req.query_string;
+}
+
 bool Client::prepare_error_response(int error_code, const ServerConfig &config)
 {
     if (!this->clear_response())
@@ -136,6 +141,13 @@ bool Client::parse_request_line(std::size_t &pos)
     {
         req.state = HttpRequest::ERROR;
         return true;
+    }
+
+    size_t query_pos = req.path.find('?');
+    if (query_pos != std::string::npos)
+    {
+        req.query_string = req.path.substr(query_pos + 1);
+        req.path = req.path.substr(0, query_pos);
     }
 
     if (req.version.compare(0, 5, "HTTP/") != 0)
@@ -319,11 +331,24 @@ void Client::build_response_buffer()
 
     this->res.version = "HTTP/1.1";
     ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
-    ss << "Content-Type: " << this->res.content_type << "\r\n";
+
+    if (!this->res.content_type.empty())
+        ss << "Content-Type: " << this->res.content_type << "\r\n";
+
     ss << "Content-Length: " << this->res.body.size() << "\r\n";
+
     for (std::map<std::string, std::string>::const_iterator it = this->res.headers.begin();
          it != this->res.headers.end(); ++it)
+    {
+        std::string key(it->first);
+        to_lower(key);
+
+        if (key == "content-type" || key == "content-length" || key == "connection")
+            continue;
+
         ss << it->first << ": " << it->second << "\r\n";
+    }
+
     ss << "Connection: close\r\n";
     ss << "\r\n";
     ss << this->res.body;
@@ -755,6 +780,79 @@ void Client::build_redirect_response(const LocationConfig &loc)
     this->res.headers["Location"] = loc.redirect_url;
 }
 
+bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const
+{
+    if (!loc || loc->cgi_handlers.empty())
+        return false;
+
+    const std::string &path = this->req.path;
+
+    for (std::map<std::string, std::string>::const_iterator it = loc->cgi_handlers.begin();
+         it != loc->cgi_handlers.end(); ++it)
+    {
+        const std::string &ext = it->first;
+
+        if (path.size() < ext.size())
+            continue;
+
+        if (path.compare(path.size() - ext.size(), ext.size(), ext) == 0)
+        {
+            script_name = path;
+            interpreter = it->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Client::parse_cgi_output(const std::string &output)
+{
+    size_t headers_end = output.find("\n\n");
+
+    if (headers_end == std::string::npos)
+        return false;
+
+    std::string headers_part = output.substr(0, headers_end);
+
+    this->res.body = output.substr(headers_end + 2);
+    this->res.status_code = 200;
+    this->res.reason = "OK";
+    this->res.content_type = "text/html";
+
+    size_t line_start = 0;
+
+    while (line_start < headers_part.size())
+    {
+        size_t line_end = headers_part.find('\n', line_start);
+
+        if (line_end == std::string::npos)
+            line_end = headers_part.size();
+
+        std::string line = headers_part.substr(line_start, line_end - line_start);
+        line_start = line_end + 1;
+
+        if (line.empty())
+            continue;
+
+        size_t colon = line.find(':');
+
+        if (colon == std::string::npos || colon == 0)
+            return false;
+
+        std::string key = line.substr(0, colon);
+        std::string value = trim(line.substr(colon + 1));
+        std::string lower(key);
+        to_lower(lower);
+
+        if (lower == "content-type")
+            this->res.content_type = value;
+        else if (lower != "content-length")
+            this->res.headers[key] = value;
+    }
+
+    return true;
+}
+
 bool Client::prepare_response(ServerConfig &config)
 {
 
@@ -779,7 +877,20 @@ bool Client::prepare_response(ServerConfig &config)
         return true;
     }
 
-    if (this->get_method() == "GET")
+    std::string script_name;
+    std::string interpreter;
+
+    if (split_cgi_path(loc, script_name, interpreter))
+    {
+        if (DEBUG)
+            std::cout << "CGI match: script=" << script_name
+                      << " interpreter=" << interpreter << std::endl;
+        std::string test = "Content-Type: text/html\nTest: idk\n\n<h1>CGI works</h1>\n";
+
+        if (!parse_cgi_output(test))
+            build_error_response(502, config, loc);
+    }
+    else if (this->get_method() == "GET")
         handle_get_req(config, loc);
     // else if (this->get_method() == "POST")
     //     handle_post(config);
