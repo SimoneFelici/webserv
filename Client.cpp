@@ -608,6 +608,137 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
+int Client::write_uploaded_file(const std::string &file_path)
+{
+    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // sono i permessi da assegnare al file quando viene creato:
+
+    if (file_fd == -1)
+    {
+        if (errno == EACCES) // EACCES significa accesso negato.
+            return 403;
+        return 500;
+    }
+
+    const std::string &body = this->req.body;
+    size_t total_written = 0; // tiene traccia del numero di byte già scritti.x
+
+    while (total_written < body.size())
+    {
+        //write(file_descriptor, dati_da_scrivere, numero_di_byte);
+        ssize_t written = write(file_fd, body.c_str() + total_written, body.size() - total_written);
+
+        if (written == -1)
+        {
+            int saved_errno = errno; // Ho salvato errno perché close() potrebbe modificarlo e farti perdere la causa reale dell’errore di write().
+            close(file_fd);
+
+            if (saved_errno == EACCES)
+                return 403;
+            return 500;
+        }
+
+        if (written == 0)
+        {
+            close(file_fd);
+            return 500;
+        }
+
+        total_written += static_cast<size_t>(written);
+    }
+
+    if (close(file_fd) == -1)
+        return 500;
+
+    return 201;
+}
+
+bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
+{
+    if (!loc) // Controlla che esista una location
+    {
+        build_error_response(404, config, loc);
+        return true;
+    }
+
+    if (loc->upload_path.empty()) // Controlla che la location abbia una cartella upload
+    {
+        build_error_response(403, config, loc);
+        return true;
+    }
+
+    if (this->req.body.empty()) // Controlla che ci sia un body
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    struct stat upload_stat;
+
+    if (stat(loc->upload_path.c_str(), &upload_stat) == -1) // Questo path esiste? E che tipo di elemento è?
+    {
+        {
+            std::cerr << "UPLOAD PATH: [" << loc->upload_path << "]" << std::endl;
+            std::cerr << "STAT ERROR: " << strerror(errno) << std::endl;
+
+            if (errno == EACCES)
+                build_error_response(403, config, loc);
+            else
+                build_error_response(500, config, loc);
+
+            return true;
+        }
+    }
+
+    if (!S_ISDIR(upload_stat.st_mode)) // controlla che sia davvero una directory
+    {
+        build_error_response(500, config, loc);
+        return true;
+    }
+
+    std::string request_path = this->get_path();
+    std::string file_name;
+
+    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    file_name = request_path.substr(loc->path.size());
+
+    if (!file_name.empty() && file_name[0] == '/')
+        file_name.erase(0, 1);
+
+    // Validiamo il nome
+    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+    {
+        build_error_response(400, config, loc);
+        return true;
+    }
+
+    std::string file_path = loc->upload_path;
+
+    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+        file_path += "/";
+
+    file_path += file_name;
+
+    int upload_status = write_uploaded_file(file_path);
+
+    if (upload_status != 201)
+    {
+        build_error_response(upload_status, config, loc);
+        return true;
+    }
+
+    this->res.status_code = 201;
+    this->res.reason = "Created";
+    this->res.content_type = "text/plain";
+    this->res.body = "File uploaded successfully\n";
+
+    return true;
+}
+
 const LocationConfig *Client::match_location(const ServerConfig &config) const
 {
     const LocationConfig *best = NULL;
@@ -781,8 +912,8 @@ bool Client::prepare_response(ServerConfig &config)
 
     if (this->get_method() == "GET")
         handle_get_req(config, loc);
-    // else if (this->get_method() == "POST")
-    //     handle_post(config);
+    else if (this->get_method() == "POST")
+        handle_post_req(config, loc);
     // else if (this->get_method() == "DELETE")
     //     handle_delete(config);
     else

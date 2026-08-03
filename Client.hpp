@@ -49,9 +49,11 @@ class Client
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
+    int Client::write_uploaded_file(const std::string &file_path)
 
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
+    bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
 
   private:
     struct HttpRequest
