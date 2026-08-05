@@ -2,6 +2,8 @@
 #include "Config.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
+#include <iostream>
+#include <unistd.h>
 
 Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false) {}
 
@@ -390,7 +392,7 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[431] = "Request Header Fields Too Large";
     error_codes[500] = "Internal Server Error";
     error_codes[501] = "Not Implemented";
-    error_codes[502] = "Internal Server Error";
+    error_codes[502] = "Bad Gateway";
     error_codes[505] = "HTTP Version Not Supported";
 
     std::map<int, std::string>::const_iterator it = error_codes.find(error_code);
@@ -702,6 +704,7 @@ int Client::sanitize_path()
         path += "/";
     return 0;
 }
+
 int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
 {
     if (this->get_version() != "HTTP/1.1")
@@ -853,6 +856,59 @@ bool Client::parse_cgi_output(const std::string &output)
     return true;
 }
 
+bool Client::exec_cgi(const std::string &script_path, const std::string &interpreter, std::string &output) const
+{
+    int fds[2];
+    if (pipe(fds) == -1)
+    {
+        std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    int pid = fork();
+    if (pid == -1)
+    {
+        std::cerr << "Error: fork failed: " << strerror(errno) << std::endl;
+        close(fds[0]);
+        close(fds[1]);
+        return false;
+    }
+
+    if (pid == 0)
+    {
+        close(fds[0]);
+        if (dup2(fds[1], STDOUT_FILENO) == -1)
+            _exit(1);
+        close(fds[1]);
+
+        char *argv[3];
+        argv[0] = const_cast<char *>(interpreter.c_str());
+        argv[1] = const_cast<char *>(script_path.c_str());
+        argv[2] = NULL;
+
+        char *envp[1];
+        envp[0] = NULL;
+
+        execve(argv[0], argv, envp);
+        exit(1);
+    }
+    close(fds[1]);
+    output.clear();
+
+    char buffer[SOCKET_BUFFER_SIZE];
+    ssize_t bytes_read;
+
+    while ((bytes_read = read(fds[0], buffer, sizeof(buffer))) > 0)
+        output.append(buffer, bytes_read);
+
+    close(fds[0]);
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    return (true);
+}
+
 bool Client::prepare_response(ServerConfig &config)
 {
 
@@ -882,12 +938,15 @@ bool Client::prepare_response(ServerConfig &config)
 
     if (split_cgi_path(loc, script_name, interpreter))
     {
-        if (DEBUG)
-            std::cout << "CGI match: script=" << script_name
-                      << " interpreter=" << interpreter << std::endl;
-        std::string test = "Content-Type: text/html\nTest: idk\n\n<h1>CGI works</h1>\n";
+        std::string script_path = build_file_path(config, loc);
+        std::string output;
 
-        if (!parse_cgi_output(test))
+        if (DEBUG)
+            std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
+
+        if (!exec_cgi(script_path, interpreter, output))
+            build_error_response(500, config, loc);
+        else if (!parse_cgi_output(output))
             build_error_response(502, config, loc);
     }
     else if (this->get_method() == "GET")

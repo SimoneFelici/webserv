@@ -7,6 +7,8 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <vector>
 
 struct ServerConfig;
@@ -56,6 +58,7 @@ class Client
 
     // CGI
     bool parse_cgi_output(const std::string &output);
+    bool exec_cgi(const std::string &script_path, const std::string &interpreter, std::string &output) const;
 
   private:
     struct HttpRequest
