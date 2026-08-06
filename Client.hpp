@@ -58,7 +58,7 @@ class Client
 
     // CGI
     bool parse_cgi_output(const std::string &output);
-    bool exec_cgi(const std::string &script_path, const std::string &interpreter, std::string &output) const;
+    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter, std::string &output) const;
 
   private:
     struct HttpRequest

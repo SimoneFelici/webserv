@@ -810,14 +810,22 @@ bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name,
 
 bool Client::parse_cgi_output(const std::string &output)
 {
+    size_t sep_len = 2;
     size_t headers_end = output.find("\n\n");
+    size_t crlf = output.find("\r\n\r\n");
+
+    if (crlf != std::string::npos && (headers_end == std::string::npos || crlf < headers_end))
+    {
+        headers_end = crlf;
+        sep_len = 4;
+    }
 
     if (headers_end == std::string::npos)
         return false;
 
     std::string headers_part = output.substr(0, headers_end);
 
-    this->res.body = output.substr(headers_end + 2);
+    this->res.body = output.substr(headers_end + sep_len);
     this->res.status_code = 200;
     this->res.reason = "OK";
     this->res.content_type = "text/html";
@@ -834,6 +842,9 @@ bool Client::parse_cgi_output(const std::string &output)
         std::string line = headers_part.substr(line_start, line_end - line_start);
         line_start = line_end + 1;
 
+        if (!line.empty() && line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
         if (line.empty())
             continue;
 
@@ -845,6 +856,7 @@ bool Client::parse_cgi_output(const std::string &output)
         std::string key = line.substr(0, colon);
         std::string value = trim(line.substr(colon + 1));
         std::string lower(key);
+
         to_lower(lower);
 
         if (lower == "content-type")
@@ -856,7 +868,8 @@ bool Client::parse_cgi_output(const std::string &output)
     return true;
 }
 
-bool Client::exec_cgi(const std::string &script_path, const std::string &interpreter, std::string &output) const
+// A VALID CGI HAS AT LEAST ONE OF THIS HEADERS: Content-Type, Location OR Status
+bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter, std::string &output) const
 {
     int fds[2];
     if (pipe(fds) == -1)
@@ -864,6 +877,23 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &interpr
         std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
         return false;
     }
+
+    std::vector<std::string> env;
+    env.push_back("GATEWAY_INTERFACE=CGI/1.1");
+    env.push_back("SERVER_PROTOCOL=HTTP/1.1");
+    env.push_back("REQUEST_METHOD=" + this->req.method);
+    env.push_back("QUERY_STRING=" + this->req.query_string);
+    env.push_back("SCRIPT_NAME=" + script_name);
+    env.push_back("SCRIPT_FILENAME=" + script_path);
+    env.push_back("PATH_INFO=");
+    env.push_back("CONTENT_LENGTH=0");
+    env.push_back("CONTENT_TYPE=");
+    env.push_back("REDIRECT_STATUS=200");
+    std::vector<char *> envp;
+    for (size_t i = 0; i < env.size(); ++i)
+        envp.push_back(const_cast<char *>(env[i].c_str()));
+
+    envp.push_back(NULL);
 
     int pid = fork();
     if (pid == -1)
@@ -886,11 +916,8 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &interpr
         argv[1] = const_cast<char *>(script_path.c_str());
         argv[2] = NULL;
 
-        char *envp[1];
-        envp[0] = NULL;
-
-        execve(argv[0], argv, envp);
-        exit(1);
+        execve(argv[0], argv, &envp[0]);
+        _exit(1);
     }
     close(fds[1]);
     output.clear();
@@ -944,7 +971,7 @@ bool Client::prepare_response(ServerConfig &config)
         if (DEBUG)
             std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
 
-        if (!exec_cgi(script_path, interpreter, output))
+        if (!exec_cgi(script_path, script_name, interpreter, output))
             build_error_response(500, config, loc);
         else if (!parse_cgi_output(output))
             build_error_response(502, config, loc);
