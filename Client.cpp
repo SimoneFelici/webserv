@@ -624,7 +624,7 @@ int Client::write_uploaded_file(const std::string &file_path)
 
     while (total_written < body.size())
     {
-        //write(file_descriptor, dati_da_scrivere, numero_di_byte);
+        // write(file_descriptor, dati_da_scrivere, numero_di_byte);
         ssize_t written = write(file_fd, body.c_str() + total_written, body.size() - total_written);
 
         if (written == -1)
@@ -656,18 +656,10 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
 {
     boundary.clear();
 
-    /*
-     * Il valore di Content-Type non viene convertito in minuscolo
-     * da get_header(). Creiamo quindi una copia per effettuare
-     * le ricerche senza dipendere da maiuscole e minuscole.
-     */
     std::string lower_content_type = content_type;
     to_lower(lower_content_type);
 
-    /*
-     * Prima controlliamo che si tratti davvero di multipart/form-data.
-     */
-    if (lower_content_type.find("multipart/form-data") == std::string::npos)
+    if (lower_content_type.find("multipart/form-data") == std::string::npos) // controlliamo che si tratti davvero di multipart/form-data.
         return false;
 
     const std::string marker = "boundary=";
@@ -677,17 +669,9 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
     if (boundary_start == std::string::npos)
         return false;
 
-    /*
-     * Spostiamo la posizione subito dopo "boundary=".
-     */
-    boundary_start += marker.size();
+    boundary_start += marker.size(); // Spostiamo la posizione subito dopo "boundary=".
 
-    /*
-     * Ignoriamo eventuali spazi e tab:
-     *
-     * boundary=ABC
-     * boundary= ABC
-     */
+    // Ignoriamo eventuali spazi e tab:
     while (boundary_start < content_type.size() && (content_type[boundary_start] == ' ' || content_type[boundary_start] == '\t'))
         ++boundary_start;
 
@@ -704,8 +688,7 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
 
         boundary = content_type.substr(
             boundary_start + 1,
-            boundary_end - boundary_start - 1
-        );
+            boundary_end - boundary_start - 1);
     }
     else
     {
@@ -722,18 +705,13 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
         boundary = trim(
             content_type.substr(
                 boundary_start,
-                boundary_end - boundary_start
-            )
-        );
+                boundary_end - boundary_start));
     }
 
     if (boundary.empty())
         return false;
 
-    /*
-     * Evitiamo caratteri che potrebbero rompere la struttura
-     * delle righe HTTP.
-     */
+    // Evitiamo caratteri che potrebbero rompere la struttura delle righe HTTP.
     if (boundary.find('\r') != std::string::npos || boundary.find('\n') != std::string::npos)
     {
         boundary.clear();
@@ -843,9 +821,7 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     return false;
 
                 std::string parameter_value;
-                /*
-                 * Caso con virgolette
-                 */
+                // Caso con virgolette
                 if (value[pos] == '"')
                 {
                     ++pos;
@@ -866,11 +842,8 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     if (pos < value.size() && value[pos] != ';')
                         return false;
                 }
-                else
+                else // Accettiamo anche un valore senza virgolette
                 {
-                    /*
-                     * Accettiamo anche un valore senza virgolette:
-                     */
                     size_t parameter_end = value.find(';', pos);
 
                     if (parameter_end == std::string::npos)
@@ -899,16 +872,9 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     part.filename = parameter_value;
                     has_filename = true;
                 }
-
-                /*
-                 * Eventuali parametri sconosciuti vengono ignorati.
-                 * Il ciclo continuerà dal prossimo ';'.
-                 */
+                // Eventuali parametri sconosciuti vengono ignorati. Il ciclo continuerà dal prossimo ';'
             }
-
-            /*
-             * Ogni parte multipart/form-data deve avere un name.
-             */
+            // Ogni parte multipart/form-data deve avere un name.
             if (!has_name || part.name.empty())
                 return false;
         }
@@ -923,11 +889,7 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
             part.content_type = value;
             has_content_type = true;
         }
-
-        /*
-         * Altri header della parte vengono per ora ignorati.
-         */
-
+        // Altri header della parte vengono per ora ignorati.
         if (line_end == headers_block.size())
             break;
 
@@ -935,6 +897,78 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
     }
 
     return has_content_disposition;
+}
+
+int Client::parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const
+{
+    parts.clear();
+
+    if (body.empty() || boundary.empty())
+        return 400;
+
+    std::string delimiter = "--" + boundary; // Un body multipart deve iniziare con: --BOUNDARY\r\n
+    if (body.compare(0, delimiter.size(), delimiter) != 0)
+        return 400;
+
+    size_t pos = delimiter.size();
+
+    while (pos < body.size())
+    {
+        // Se subito dopo il boundary troviamo "--" significa che questo è il boundary finale
+        if (body.compare(pos, 2, "--") == 0)
+        {
+            if (parts.empty())
+                return 400;
+            else
+                return 0;
+        }
+        // Dopo un boundary normale ci deve essere CRLF: --BOUNDARY\r\n
+        if (body.compare(pos, 2, "\r\n") != 0)
+            return 400;
+
+        pos += 2;
+
+        /*
+         * Cerchiamo la fine degli header della part:
+         *
+         * Content-Disposition: ...
+         * Content-Type: ...
+         *
+         * <dati>
+         */
+        size_t headers_end = body.find("\r\n\r\n", pos);
+
+        if (headers_end == std::string::npos)
+            return 400;
+
+        std::string headers_block = body.substr(pos, headers_end - pos);
+
+        MultipartPart part;
+
+        if (!parse_multipart_part_headers(headers_block, part))
+            return 400;
+
+        // I dati iniziano subito dopo \r\n\r\n
+        size_t data_start = headers_end + 4;
+        // Il prossimo boundary è preceduto da CRLF: dati...\r\n--BOUNDARY
+
+        std::string next_marker = "\r\n" + delimiter;
+
+        size_t next_boundary = body.find(next_marker, data_start);
+
+        if (next_boundary == std::string::npos)
+            return 400;
+
+        // Tutto ciò che c'è tra data_start e il prossimo boundary appartiene alla part.
+        // substr() lavora anche con dati binari perché std::string può contenere byte '\0'
+        part.data = body.substr(data_start, next_boundary - data_start);
+
+        parts.push_back(part);
+
+        pos = next_boundary + 2 + delimiter.size();
+    }
+
+    return 400;
 }
 
 bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
