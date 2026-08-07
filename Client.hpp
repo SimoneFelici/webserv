@@ -12,6 +12,14 @@
 struct ServerConfig;
 struct LocationConfig;
 
+struct MultipartPart
+{
+    std::string name;
+    std::string filename;
+    std::string content_type;
+    std::string data;
+};
+
 class Client
 {
   public:
@@ -49,10 +57,10 @@ class Client
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
-    int Client::write_uploaded_file(const std::string &file_path)
+    int write_uploaded_file(const std::string &file_path)
 
-    // Methods
-    bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
+        // Methods
+        bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
     bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
 
   private:
@@ -119,4 +127,9 @@ class Client
     int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
     std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
+
+    bool extract_multipart_boundary(const std::string &content_type, std::string &boundary) const;
+    int parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const;
+    bool parse_multipart_part_headers(const std::string &headers_block, MultipartPart &part) const;
+
 };
