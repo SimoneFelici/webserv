@@ -14,6 +14,16 @@
 #include <ctime>
 #define DEBUG 1
 
+struct CgiProcess
+{
+    int client_fd;
+    pid_t pid;
+    std::string buffer;
+    time_t start;
+
+    CgiProcess() : client_fd(-1), pid(-1), start(0) {}
+};
+
 class Server
 {
   public:
@@ -40,6 +50,9 @@ class Server
     bool handle_client_read(int client_fd);
     bool handle_client_write(int client_fd);
     void close_all_clients();
+    bool handle_cgi_read(int cgi_fd);
+    void close_cgi(int cgi_fd);
+    void check_cgi_timeouts();
 
     // Tutte le configurazioni lette dai blocchi "server" del file .conf.
     std::vector<ServerConfig> configs;
@@ -61,4 +74,6 @@ class Server
     bool running;
 
     int epoll_fd;
+
+    std::map<int, CgiProcess> cgi_processes;
 };

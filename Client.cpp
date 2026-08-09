@@ -5,9 +5,9 @@
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -271,6 +271,22 @@ bool Client::parse_request()
     return false;
 }
 
+int Client::get_cgi_fd() const
+{
+    return this->cgi_fd;
+}
+
+pid_t Client::get_cgi_pid() const
+{
+    return this->cgi_pid;
+}
+
+void Client::clear_cgi()
+{
+    this->cgi_fd = -1;
+    this->cgi_pid = -1;
+}
+
 const std::string &Client::get_method() const
 {
     return this->req.method;
@@ -393,6 +409,7 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[500] = "Internal Server Error";
     error_codes[501] = "Not Implemented";
     error_codes[502] = "Bad Gateway";
+    error_codes[504] = "Gateway Timeout";
     error_codes[505] = "HTTP Version Not Supported";
 
     std::map<int, std::string>::const_iterator it = error_codes.find(error_code);
@@ -868,8 +885,20 @@ bool Client::parse_cgi_output(const std::string &output)
     return true;
 }
 
-// A VALID CGI HAS AT LEAST ONE OF THIS HEADERS: Content-Type, Location OR Status
-bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter, std::string &output) const
+bool Client::finish_cgi(const std::string &output, ServerConfig &config)
+{
+    const LocationConfig *loc = match_location(config);
+
+    if (!parse_cgi_output(output))
+        build_error_response(502, config, loc);
+
+    build_response_buffer();
+    clear_cgi();
+
+    return true;
+}
+
+bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter)
 {
     int fds[2];
     if (pipe(fds) == -1)
@@ -895,7 +924,7 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
 
     envp.push_back(NULL);
 
-    int pid = fork();
+    pid_t pid = fork();
     if (pid == -1)
     {
         std::cerr << "Error: fork failed: " << strerror(errno) << std::endl;
@@ -920,25 +949,23 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
         _exit(1);
     }
     close(fds[1]);
-    output.clear();
 
-    char buffer[SOCKET_BUFFER_SIZE];
-    ssize_t bytes_read;
+    if (!set_nonblocking(fds[0]))
+    {
+        close(fds[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return false;
+    }
 
-    while ((bytes_read = read(fds[0], buffer, sizeof(buffer))) > 0)
-        output.append(buffer, bytes_read);
+    this->cgi_fd = fds[0];
+    this->cgi_pid = pid;
 
-    close(fds[0]);
-
-    int status;
-    waitpid(pid, &status, 0);
-
-    return (true);
+    return true;
 }
 
 bool Client::prepare_response(ServerConfig &config)
 {
-
     if (!this->clear_response())
         return false;
 
@@ -966,17 +993,21 @@ bool Client::prepare_response(ServerConfig &config)
     if (split_cgi_path(loc, script_name, interpreter))
     {
         std::string script_path = build_file_path(config, loc);
-        std::string output;
 
         if (DEBUG)
             std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
 
-        if (!exec_cgi(script_path, script_name, interpreter, output))
+        if (!exec_cgi(script_path, script_name, interpreter))
+        {
             build_error_response(500, config, loc);
-        else if (!parse_cgi_output(output))
-            build_error_response(502, config, loc);
+            build_response_buffer();
+            return true;
+        }
+
+        return true;
     }
-    else if (this->get_method() == "GET")
+
+    if (this->get_method() == "GET")
         handle_get_req(config, loc);
     // else if (this->get_method() == "POST")
     //     handle_post(config);

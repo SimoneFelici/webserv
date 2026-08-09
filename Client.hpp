@@ -1,5 +1,6 @@
 #pragma once
 
+#include <csignal>
 #include <cstdlib>
 #include <dirent.h> // ??
 #include <iostream>
@@ -58,7 +59,11 @@ class Client
 
     // CGI
     bool parse_cgi_output(const std::string &output);
-    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter, std::string &output) const;
+    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter);
+    int get_cgi_fd() const;
+    pid_t get_cgi_pid() const;
+    void clear_cgi();
+    bool finish_cgi(const std::string &output, ServerConfig &config);
 
   private:
     struct HttpRequest
@@ -108,6 +113,9 @@ class Client
     HttpResponse res;
 
     bool headers_too_large;
+
+    int cgi_fd;
+    pid_t cgi_pid;
 
     std::string get_error_reason(int error_code) const;
 
