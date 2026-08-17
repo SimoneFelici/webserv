@@ -2,10 +2,12 @@
 #include "Config.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
+#include <iostream>
+#include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -28,6 +30,11 @@ const std::string &Client::get_request() const
 bool Client::is_headers_too_large() const
 {
     return (this->headers_too_large);
+}
+
+const std::string &Client::get_query_string() const
+{
+    return this->req.query_string;
 }
 
 bool Client::prepare_error_response(int error_code, const ServerConfig &config)
@@ -136,6 +143,13 @@ bool Client::parse_request_line(std::size_t &pos)
     {
         req.state = HttpRequest::ERROR;
         return true;
+    }
+
+    size_t query_pos = req.path.find('?');
+    if (query_pos != std::string::npos)
+    {
+        req.query_string = req.path.substr(query_pos + 1);
+        req.path = req.path.substr(0, query_pos);
     }
 
     if (req.version.compare(0, 5, "HTTP/") != 0)
@@ -257,6 +271,22 @@ bool Client::parse_request()
     return false;
 }
 
+int Client::get_cgi_fd() const
+{
+    return this->cgi_fd;
+}
+
+pid_t Client::get_cgi_pid() const
+{
+    return this->cgi_pid;
+}
+
+void Client::clear_cgi()
+{
+    this->cgi_fd = -1;
+    this->cgi_pid = -1;
+}
+
 const std::string &Client::get_method() const
 {
     return this->req.method;
@@ -319,11 +349,24 @@ void Client::build_response_buffer()
 
     this->res.version = "HTTP/1.1";
     ss << this->res.version << " " << this->res.status_code << " " << this->res.reason << "\r\n";
-    ss << "Content-Type: " << this->res.content_type << "\r\n";
+
+    if (!this->res.content_type.empty())
+        ss << "Content-Type: " << this->res.content_type << "\r\n";
+
     ss << "Content-Length: " << this->res.body.size() << "\r\n";
+
     for (std::map<std::string, std::string>::const_iterator it = this->res.headers.begin();
          it != this->res.headers.end(); ++it)
+    {
+        std::string key(it->first);
+        to_lower(key);
+
+        if (key == "content-type" || key == "content-length" || key == "connection")
+            continue;
+
         ss << it->first << ": " << it->second << "\r\n";
+    }
+
     ss << "Connection: close\r\n";
     ss << "\r\n";
     ss << this->res.body;
@@ -365,7 +408,8 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[431] = "Request Header Fields Too Large";
     error_codes[500] = "Internal Server Error";
     error_codes[501] = "Not Implemented";
-    error_codes[502] = "Internal Server Error";
+    error_codes[502] = "Bad Gateway";
+    error_codes[504] = "Gateway Timeout";
     error_codes[505] = "HTTP Version Not Supported";
 
     std::map<int, std::string>::const_iterator it = error_codes.find(error_code);
@@ -1127,6 +1171,7 @@ int Client::sanitize_path()
         path += "/";
     return 0;
 }
+
 int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
 {
     if (this->get_version() != "HTTP/1.1")
@@ -1205,9 +1250,172 @@ void Client::build_redirect_response(const LocationConfig &loc)
     this->res.headers["Location"] = loc.redirect_url;
 }
 
+bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const
+{
+    if (!loc || loc->cgi_handlers.empty())
+        return false;
+
+    const std::string &path = this->req.path;
+
+    for (std::map<std::string, std::string>::const_iterator it = loc->cgi_handlers.begin();
+         it != loc->cgi_handlers.end(); ++it)
+    {
+        const std::string &ext = it->first;
+
+        if (path.size() < ext.size())
+            continue;
+
+        if (path.compare(path.size() - ext.size(), ext.size(), ext) == 0)
+        {
+            script_name = path;
+            interpreter = it->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Client::parse_cgi_output(const std::string &output)
+{
+    size_t sep_len = 2;
+    size_t headers_end = output.find("\n\n");
+    size_t crlf = output.find("\r\n\r\n");
+
+    if (crlf != std::string::npos && (headers_end == std::string::npos || crlf < headers_end))
+    {
+        headers_end = crlf;
+        sep_len = 4;
+    }
+
+    if (headers_end == std::string::npos)
+        return false;
+
+    std::string headers_part = output.substr(0, headers_end);
+
+    this->res.body = output.substr(headers_end + sep_len);
+    this->res.status_code = 200;
+    this->res.reason = "OK";
+    this->res.content_type = "text/html";
+
+    size_t line_start = 0;
+
+    while (line_start < headers_part.size())
+    {
+        size_t line_end = headers_part.find('\n', line_start);
+
+        if (line_end == std::string::npos)
+            line_end = headers_part.size();
+
+        std::string line = headers_part.substr(line_start, line_end - line_start);
+        line_start = line_end + 1;
+
+        if (!line.empty() && line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
+        if (line.empty())
+            continue;
+
+        size_t colon = line.find(':');
+
+        if (colon == std::string::npos || colon == 0)
+            return false;
+
+        std::string key = line.substr(0, colon);
+        std::string value = trim(line.substr(colon + 1));
+        std::string lower(key);
+
+        to_lower(lower);
+
+        if (lower == "content-type")
+            this->res.content_type = value;
+        else if (lower != "content-length")
+            this->res.headers[key] = value;
+    }
+
+    return true;
+}
+
+bool Client::finish_cgi(const std::string &output, ServerConfig &config)
+{
+    const LocationConfig *loc = match_location(config);
+
+    if (!parse_cgi_output(output))
+        build_error_response(502, config, loc);
+
+    build_response_buffer();
+    clear_cgi();
+
+    return true;
+}
+
+bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter)
+{
+    int fds[2];
+    if (pipe(fds) == -1)
+    {
+        std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    std::vector<std::string> env;
+    env.push_back("GATEWAY_INTERFACE=CGI/1.1");
+    env.push_back("SERVER_PROTOCOL=HTTP/1.1");
+    env.push_back("REQUEST_METHOD=" + this->req.method);
+    env.push_back("QUERY_STRING=" + this->req.query_string);
+    env.push_back("SCRIPT_NAME=" + script_name);
+    env.push_back("SCRIPT_FILENAME=" + script_path);
+    env.push_back("PATH_INFO=");
+    env.push_back("CONTENT_LENGTH=0");
+    env.push_back("CONTENT_TYPE=");
+    env.push_back("REDIRECT_STATUS=200");
+    std::vector<char *> envp;
+    for (size_t i = 0; i < env.size(); ++i)
+        envp.push_back(const_cast<char *>(env[i].c_str()));
+
+    envp.push_back(NULL);
+
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        std::cerr << "Error: fork failed: " << strerror(errno) << std::endl;
+        close(fds[0]);
+        close(fds[1]);
+        return false;
+    }
+
+    if (pid == 0)
+    {
+        close(fds[0]);
+        if (dup2(fds[1], STDOUT_FILENO) == -1)
+            _exit(1);
+        close(fds[1]);
+
+        char *argv[3];
+        argv[0] = const_cast<char *>(interpreter.c_str());
+        argv[1] = const_cast<char *>(script_path.c_str());
+        argv[2] = NULL;
+
+        execve(argv[0], argv, &envp[0]);
+        _exit(1);
+    }
+    close(fds[1]);
+
+    if (!set_nonblocking(fds[0]))
+    {
+        close(fds[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return false;
+    }
+
+    this->cgi_fd = fds[0];
+    this->cgi_pid = pid;
+
+    return true;
+}
+
 bool Client::prepare_response(ServerConfig &config)
 {
-
     if (!this->clear_response())
         return false;
 
@@ -1226,6 +1434,26 @@ bool Client::prepare_response(ServerConfig &config)
     {
         build_redirect_response(*loc);
         build_response_buffer();
+        return true;
+    }
+
+    std::string script_name;
+    std::string interpreter;
+
+    if (split_cgi_path(loc, script_name, interpreter))
+    {
+        std::string script_path = build_file_path(config, loc);
+
+        if (DEBUG)
+            std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
+
+        if (!exec_cgi(script_path, script_name, interpreter))
+        {
+            build_error_response(500, config, loc);
+            build_response_buffer();
+            return true;
+        }
+
         return true;
     }
 
