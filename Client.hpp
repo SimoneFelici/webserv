@@ -1,5 +1,6 @@
 #pragma once
 
+#include <csignal>
 #include <cstdlib>
 #include <dirent.h> // ??
 #include <iostream>
@@ -7,6 +8,8 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <vector>
 
 struct ServerConfig;
@@ -42,6 +45,7 @@ class Client
     const std::string &get_body() const;
     std::string get_header(const std::string &key) const;
     bool is_headers_too_large() const;
+    const std::string &get_query_string() const;
 
     // Response
     bool clear_response();
@@ -54,6 +58,14 @@ class Client
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
     bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
+
+    // CGI
+    bool parse_cgi_output(const std::string &output);
+    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter);
+    int get_cgi_fd() const;
+    pid_t get_cgi_pid() const;
+    void clear_cgi();
+    bool finish_cgi(const std::string &output, ServerConfig &config);
 
   private:
     struct HttpRequest
@@ -75,6 +87,7 @@ class Client
         std::map<std::string, std::string> headers;
         std::string body;
         std::size_t body_start;
+        std::string query_string;
 
         HttpRequest() : state(PARSING_REQUEST_LINE), body_start(0) {}
     };
@@ -103,6 +116,9 @@ class Client
 
     bool headers_too_large;
 
+    int cgi_fd;
+    pid_t cgi_pid;
+
     std::string get_error_reason(int error_code) const;
 
     bool parse_request_line(std::size_t &pos);
@@ -119,4 +135,6 @@ class Client
     int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
     std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
+
+    bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const;
 };

@@ -1,6 +1,4 @@
 # webserv
-NB: bug nella lettura delle richieste: client_max_body_size viene controllato in validate_req(), ma solamente dopo che parse_body() ha aspettato e memorizzato tutto il body.
-
 
 **TODO — Pulizia config e valori hardcodati**
 
