@@ -369,3 +369,69 @@ arriva una GET sul fd 7
 → uso configs[0]
 → cerco file nella root di configs[0]
 ```
+
+
+```
+epoll_wait()
+→ aspetta eventi sui listening socket e sui client:
+  nuove connessioni, dati leggibili, socket scrivibili, errori
+
+handle_client_read()
+→ coordina la lettura di un pezzo della richiesta,
+  il parsing e l’eventuale preparazione della risposta
+
+recv()
+→ legge dal socket i byte attualmente disponibili;
+  non garantisce di ricevere tutta la richiesta
+
+has_full_headers()
+→ aggiunge i byte a request_buffer
+  e controlla se è arrivata la fine degli header
+
+parse_request()
+→ parsa progressivamente la struttura HTTP:
+  request line, header e body
+
+parse_request_line()
+→ estrae method, path e version
+
+parse_headers()
+→ estrae gli header e controlla Host
+
+parse_body()
+→ aspetta i byte indicati da Content-Length
+  e, quando sono arrivati, imposta DONE
+
+req_done()
+→ controlla semplicemente se req.state == DONE
+
+prepare_response()
+→ valida la richiesta, gestisce redirect,
+  sceglie GET/POST/altro e costruisce la risposta
+
+validate_req()
+→ controlla versione, path, location,
+  metodi consentiti e dimensione body
+
+handle_post_req()
+→ verifica upload_path, nome e directory
+  e prepara il salvataggio del file
+
+write_uploaded_file()
+→ scrive req.body nel file su disco
+
+build_response_buffer()
+→ trasforma res in una stringa HTTP completa
+
+modify_epoll_fd(..., EPOLLOUT)
+→ chiede a epoll di avvisare quando il client è scrivibile
+
+handle_client_write()
+→ gestisce l’invio, anche parziale, della risposta
+
+send()
+→ manda un pezzo della risposta al client
+
+close_client()
+→ chiude e rimuove il client quando la risposta è completa
+```

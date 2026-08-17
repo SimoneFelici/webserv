@@ -404,6 +404,7 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[403] = "Forbidden";
     error_codes[404] = "Not Found";
     error_codes[405] = "Method Not Allowed";
+    error_codes[409] = "Conflict";
     error_codes[413] = "Payload Too Large";
     error_codes[431] = "Request Header Fields Too Large";
     error_codes[500] = "Internal Server Error";
@@ -652,32 +653,29 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
-int Client::write_uploaded_file(const std::string &file_path)
+int Client::write_uploaded_file(const std::string &file_path, const std::string &data)
 {
-    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // sono i permessi da assegnare al file quando viene creato:
+    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644); // sono i permessi da assegnare al file quando viene creato, lo crea solo se non esiste gia
 
     if (file_fd == -1)
     {
-        if (errno == EACCES) // EACCES significa accesso negato.
+        if (errno == EEXIST)
+            return 409;
+        if (errno == EACCES)
             return 403;
         return 500;
     }
 
-    const std::string &body = this->req.body;
     size_t total_written = 0; // tiene traccia del numero di byte già scritti.x
 
-    while (total_written < body.size())
+    while (total_written < data.size())
     {
-        //write(file_descriptor, dati_da_scrivere, numero_di_byte);
-        ssize_t written = write(file_fd, body.c_str() + total_written, body.size() - total_written);
+        // write(file_descriptor, dati_da_scrivere, numero_di_byte);
+        ssize_t written = write(file_fd, data.c_str() + total_written, data.size() - total_written);
 
         if (written == -1)
         {
-            int saved_errno = errno; // Ho salvato errno perché close() potrebbe modificarlo e farti perdere la causa reale dell’errore di write().
             close(file_fd);
-
-            if (saved_errno == EACCES)
-                return 403;
             return 500;
         }
 
@@ -692,6 +690,397 @@ int Client::write_uploaded_file(const std::string &file_path)
 
     if (close(file_fd) == -1)
         return 500;
+
+    return 201;
+}
+
+bool Client::extract_multipart_boundary(const std::string &content_type, std::string &boundary) const
+{
+    boundary.clear();
+
+    std::string lower_content_type = content_type;
+    to_lower(lower_content_type);
+
+    if (lower_content_type.find("multipart/form-data") == std::string::npos) // controlliamo che si tratti davvero di multipart/form-data.
+        return false;
+
+    const std::string marker = "boundary=";
+
+    size_t boundary_start = lower_content_type.find(marker);
+
+    if (boundary_start == std::string::npos)
+        return false;
+
+    boundary_start += marker.size(); // Spostiamo la posizione subito dopo "boundary=".
+
+    // Ignoriamo eventuali spazi e tab:
+    while (boundary_start < content_type.size() && (content_type[boundary_start] == ' ' || content_type[boundary_start] == '\t'))
+        ++boundary_start;
+
+    if (boundary_start >= content_type.size())
+        return false;
+
+    if (content_type[boundary_start] == '"') // check sulle virgolette
+    {
+        size_t boundary_end =
+            content_type.find('"', boundary_start + 1);
+
+        if (boundary_end == std::string::npos)
+            return false;
+
+        boundary = content_type.substr(
+            boundary_start + 1,
+            boundary_end - boundary_start - 1);
+    }
+    else
+    {
+        /*
+         * Senza virgolette, il valore finisce al prossimo ';'
+         * oppure alla fine dell'header.
+         */
+        size_t boundary_end =
+            content_type.find(';', boundary_start);
+
+        if (boundary_end == std::string::npos)
+            boundary_end = content_type.size();
+
+        boundary = trim(
+            content_type.substr(
+                boundary_start,
+                boundary_end - boundary_start));
+    }
+
+    if (boundary.empty())
+        return false;
+
+    // Evitiamo caratteri che potrebbero rompere la struttura delle righe HTTP.
+    if (boundary.find('\r') != std::string::npos || boundary.find('\n') != std::string::npos)
+    {
+        boundary.clear();
+        return false;
+    }
+
+    return true;
+}
+
+bool Client::parse_multipart_part_headers(const std::string &headers_block, MultipartPart &part) const
+{
+    part.name.clear();
+    part.filename.clear();
+    part.content_type.clear();
+    part.data.clear();
+
+    bool has_content_disposition = false;
+    bool has_content_type = false;
+
+    size_t line_start = 0;
+
+    while (line_start < headers_block.size())
+    {
+        size_t line_end = headers_block.find("\r\n", line_start);
+
+        if (line_end == std::string::npos)
+            line_end = headers_block.size();
+
+        std::string line = headers_block.substr(line_start, line_end - line_start);
+
+        if (line.empty())
+            return false;
+
+        size_t colon = line.find(':'); // Ogni header deve avere la forma: nome-header: valore
+
+        if (colon == std::string::npos || colon == 0)
+            return false;
+
+        std::string key = line.substr(0, colon);
+
+        if (key.find_first_of(" \t") != std::string::npos) // Non accettiamo spazi nel nome dell'header. Content Type-> non valido
+            return false;
+
+        std::string value = trim(line.substr(colon + 1));
+
+        to_lower(key);
+
+        /*
+         * Esempio:
+         *
+         * Content-Disposition:
+         * form-data; name="file"; filename="foto.jpg"
+         */
+        if (key == "content-disposition")
+        {
+            if (has_content_disposition)
+                return false;
+
+            has_content_disposition = true;
+
+            size_t first_semicolon = value.find(';'); // La prima parte del valore deve essere "form-data".
+
+            std::string disposition;
+
+            if (first_semicolon == std::string::npos)
+                disposition = trim(value);
+            else
+                disposition = trim(value.substr(0, first_semicolon));
+
+            to_lower(disposition);
+
+            if (disposition != "form-data")
+                return false;
+
+            if (first_semicolon == std::string::npos)
+                return false;
+
+            size_t pos = first_semicolon + 1;
+            bool has_name = false;
+            bool has_filename = false;
+
+            while (pos < value.size())
+            {
+
+                while (pos < value.size() && (value[pos] == ' ' || value[pos] == '\t' || value[pos] == ';'))
+                    ++pos;
+
+                if (pos >= value.size())
+                    break;
+
+                size_t equal = value.find('=', pos);
+
+                if (equal == std::string::npos)
+                    return false;
+
+                size_t semicolon_before_equal = value.find(';', pos);
+
+                if (semicolon_before_equal != std::string::npos && semicolon_before_equal < equal)
+                    return false;
+
+                std::string parameter_name = trim(value.substr(pos, equal - pos));
+                to_lower(parameter_name);
+                pos = equal + 1;
+                while (pos < value.size() && (value[pos] == ' ' || value[pos] == '\t'))
+                    ++pos;
+                if (pos >= value.size())
+                    return false;
+
+                std::string parameter_value;
+                // Caso con virgolette
+                if (value[pos] == '"')
+                {
+                    ++pos;
+
+                    size_t closing_quote = value.find('"', pos);
+
+                    if (closing_quote == std::string::npos)
+                        return false;
+
+                    parameter_value =
+                        value.substr(pos, closing_quote - pos);
+
+                    pos = closing_quote + 1;
+
+                    while (pos < value.size() && (value[pos] == ' ' || value[pos] == '\t'))
+                        ++pos;
+
+                    if (pos < value.size() && value[pos] != ';')
+                        return false;
+                }
+                else // Accettiamo anche un valore senza virgolette
+                {
+                    size_t parameter_end = value.find(';', pos);
+
+                    if (parameter_end == std::string::npos)
+                        parameter_end = value.size();
+
+                    parameter_value = trim(value.substr(pos, parameter_end - pos));
+                    pos = parameter_end;
+                }
+
+                if (parameter_value.find('\r') != std::string::npos || parameter_value.find('\n') != std::string::npos)
+                    return false;
+
+                if (parameter_name == "name")
+                {
+                    if (has_name)
+                        return false;
+
+                    part.name = parameter_value;
+                    has_name = true;
+                }
+                else if (parameter_name == "filename")
+                {
+                    if (has_filename)
+                        return false;
+
+                    part.filename = parameter_value;
+                    has_filename = true;
+                }
+                // Eventuali parametri sconosciuti vengono ignorati. Il ciclo continuerà dal prossimo ';'
+            }
+            // Ogni parte multipart/form-data deve avere un name.
+            if (!has_name || part.name.empty())
+                return false;
+        }
+        else if (key == "content-type")
+        {
+            if (has_content_type)
+                return false;
+
+            if (value.empty())
+                return false;
+
+            part.content_type = value;
+            has_content_type = true;
+        }
+        // Altri header della parte vengono per ora ignorati.
+        if (line_end == headers_block.size())
+            break;
+
+        line_start = line_end + 2;
+    }
+
+    return has_content_disposition;
+}
+
+int Client::parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const
+{
+    parts.clear();
+
+    if (body.empty() || boundary.empty())
+        return 400;
+
+    std::string delimiter = "--" + boundary; // Un body multipart deve iniziare con: --BOUNDARY\r\n
+    if (body.compare(0, delimiter.size(), delimiter) != 0)
+        return 400;
+
+    size_t pos = delimiter.size();
+
+    while (pos < body.size())
+    {
+        // Se subito dopo il boundary troviamo "--" significa che questo è il boundary finale
+        if (body.compare(pos, 2, "--") == 0)
+        {
+            if (parts.empty())
+                return 400;
+            else
+                return 0;
+        }
+        // Dopo un boundary normale ci deve essere CRLF: --BOUNDARY\r\n
+        if (body.compare(pos, 2, "\r\n") != 0)
+            return 400;
+
+        pos += 2;
+
+        /*
+         * Cerchiamo la fine degli header della part:
+         *
+         * Content-Disposition: ...
+         * Content-Type: ...
+         *
+         * <dati>
+         */
+        size_t headers_end = body.find("\r\n\r\n", pos);
+
+        if (headers_end == std::string::npos)
+            return 400;
+
+        std::string headers_block = body.substr(pos, headers_end - pos);
+
+        MultipartPart part;
+
+        if (!parse_multipart_part_headers(headers_block, part))
+            return 400;
+
+        // I dati iniziano subito dopo \r\n\r\n
+        size_t data_start = headers_end + 4;
+        // Il prossimo boundary è preceduto da CRLF: dati...\r\n--BOUNDARY
+
+        std::string next_marker = "\r\n" + delimiter;
+
+        size_t next_boundary = body.find(next_marker, data_start);
+
+        if (next_boundary == std::string::npos)
+            return 400;
+
+        // Tutto ciò che c'è tra data_start e il prossimo boundary appartiene alla part.
+        // substr() lavora anche con dati binari perché std::string può contenere byte '\0'
+        part.data = body.substr(data_start, next_boundary - data_start);
+
+        parts.push_back(part);
+
+        pos = next_boundary + 2 + delimiter.size();
+    }
+
+    return 400;
+}
+
+int Client::handle_raw_upload(const LocationConfig *loc)
+{
+    std::string request_path = this->get_path();
+    std::string file_name;
+
+    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
+        return 400;
+
+    file_name = request_path.substr(loc->path.size());
+
+    if (!file_name.empty() && file_name[0] == '/')
+        file_name.erase(0, 1);
+
+    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+        return 400;
+
+    std::string file_path = loc->upload_path;
+
+    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+        file_path += "/";
+
+    file_path += file_name;
+    return write_uploaded_file(file_path, this->req.body);
+}
+
+int Client::handle_multipart_upload(const LocationConfig *loc, const std::string &content_type)
+{
+    std::string boundary;
+
+    if (!extract_multipart_boundary(content_type, boundary))
+        return 400;
+
+    std::vector<MultipartPart> parts;
+
+    int status = parse_multipart_body(this->req.body, boundary, parts);
+
+    if (status != 0)
+        return status;
+
+    bool file_saved = false;
+
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (parts[i].filename.empty())
+            continue;
+
+        std::string file_name = parts[i].filename;
+
+        if (file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+            return 400;
+
+        std::string file_path = loc->upload_path;
+
+        if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+            file_path += "/";
+
+        file_path += file_name;
+
+        int upload_status = write_uploaded_file(file_path, parts[i].data);
+
+        if (upload_status != 201)
+            return upload_status;
+
+        file_saved = true;
+    }
+
+    if (!file_saved)
+        return 400;
 
     return 201;
 }
@@ -738,36 +1127,16 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
         build_error_response(500, config, loc);
         return true;
     }
+    std::string content_type = this->get_header("content-type");
 
-    std::string request_path = this->get_path();
-    std::string file_name;
-
-    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
-    {
-        build_error_response(400, config, loc);
-        return true;
-    }
-
-    file_name = request_path.substr(loc->path.size());
-
-    if (!file_name.empty() && file_name[0] == '/')
-        file_name.erase(0, 1);
-
-    // Validiamo il nome
-    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
-    {
-        build_error_response(400, config, loc);
-        return true;
-    }
-
-    std::string file_path = loc->upload_path;
-
-    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
-        file_path += "/";
-
-    file_path += file_name;
-
-    int upload_status = write_uploaded_file(file_path);
+    std::string lower_content_type = content_type;
+    to_lower(lower_content_type);
+    int upload_status;
+    // Gestione multipart
+    if (lower_content_type.find("multipart/form-data") != std::string::npos)
+        upload_status = handle_multipart_upload(loc, content_type);
+    else
+        upload_status = handle_raw_upload(loc);
 
     if (upload_status != 201)
     {

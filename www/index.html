@@ -1,23 +1,21 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <title>Webserv test</title>
-    <style>
-        body { font-family: sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.5; }
-        code { background: #eee; padding: 2px 5px; }
-        a { display: block; margin: 10px 0; }
-    </style>
-</head>
-<body>
-    <h1>GET base funzionante ✅</h1>
-    <p>Questa pagina arriva da <code>./www/index.html</code>.</p>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Interactive Webserv HTTP test console"><title>Webserv HTTP Server — Test Console</title><link rel="stylesheet" href="/style.css"><script src="/script.js" defer></script></head>
+<body><a class="skip-link" href="#main">Skip to tests</a>
+<header class="site-header"><a class="brand" href="/"><span class="brand-mark">WS</span><span>Webserv</span></a><div class="server-pill"><span class="live-dot"></span>Server 1 · localhost:8081</div></header>
+<main id="main">
+<section class="hero"><div><p class="eyebrow">C++98 · event-driven · epoll</p><h1>Webserv HTTP Server</h1><p class="lede">A practical console for exercising the configured HTTP surface: static GET, POST uploads, autoindex, custom errors, redirects and Python CGI.</p><div class="actions"><a class="button primary" href="#upload">Test uploads</a><a class="button secondary" href="/gallery.html">Open gallery</a></div></div><dl class="facts"><div><dt>Instance</dt><dd>Server 1</dd></div><div><dt>Address</dt><dd><code>localhost:8081</code></dd></div><div><dt>Document root</dt><dd><code>./www</code></dd></div><div><dt>Body limit</dt><dd><code>1,000,000 bytes</code></dd></div></dl></section>
 
-    <h2>Test rapidi</h2>
-    <a href="/hello.txt">GET di un file di testo</a>
-    <a href="/missing-page">404 personalizzato del server</a>
-    <a href="/special/">GET della location /special</a>
-    <a href="/special/missing">404 personalizzato della location</a>
-    <a href="/cgi-bin/">CGIs Location</a>
-</body>
-</html>
+<section class="section"><div class="section-heading"><div><p class="eyebrow">Static & routing</p><h2>GET checks</h2></div><p>Open each endpoint and inspect the response served by Webserv.</p></div><div class="card-grid">
+<a class="test-card" href="/"><span class="badge get">GET</span><strong>Homepage</strong><code>/</code><small>Expected 200</small></a><a class="test-card" href="/hello.txt"><span class="badge get">GET</span><strong>Static text</strong><code>/hello.txt</code><small>Expected 200</small></a><a class="test-card" href="/missing-page"><span class="badge error">404</span><strong>Missing resource</strong><code>/missing-page</code><small>Expected 404</small></a><a class="test-card" href="/uploads/"><span class="badge get">GET</span><strong>Upload autoindex</strong><code>/uploads/</code><small>Expected 200</small></a><a class="test-card" href="/public/"><span class="badge get">GET</span><strong>Public location</strong><code>/public/</code><small>Expected 200</small></a><a class="test-card" href="/old"><span class="badge redirect">301</span><strong>Redirect</strong><code>/old → /</code><small>Configured 301</small></a></div></section>
+
+<section class="section" id="upload"><div class="section-heading"><div><p class="eyebrow">POST /upload</p><h2>Upload laboratory</h2></div><p>Both tools send genuine requests; results are never simulated.</p></div><div class="two-column">
+<article class="panel"><div class="panel-title"><span class="badge post">POST</span><h3>Multipart files</h3></div><p>The browser builds a real <code>multipart/form-data</code> body. Select one or several files.</p><form action="/upload" method="POST" enctype="multipart/form-data"><label class="file-drop" for="files">Choose files <small>Images, text, PDF or other regular files</small></label><input id="files" name="files" type="file" multiple required><div id="file-summary" class="file-summary" aria-live="polite">No files selected.</div><button class="button primary" type="submit">Upload selected files</button></form></article>
+<article class="panel"><div class="panel-title"><span class="badge post">POST</span><h3>Raw text body</h3></div><p>Sends <code>text/plain</code> to <code>/upload/&lt;filename&gt;</code>.</p><form id="raw-form"><label for="raw-name">Filename</label><input id="raw-name" value="browser-note.txt" pattern="[^/\\]+" required><label for="raw-body">Content</label><textarea id="raw-body" rows="5" required>Hello from the Webserv browser console.</textarea><button class="button primary" type="submit">Send raw POST</button></form><div id="raw-result" class="result" aria-live="polite">Run the test to see the real response.</div></article></div></section>
+
+<section class="section"><div class="section-heading"><div><p class="eyebrow">Validation</p><h2>Protocol checks</h2></div><p>Interactive probes for limits and method restrictions.</p></div><div class="three-column"><article class="panel"><div class="panel-title"><span class="badge error">413</span><h3>Body size limit</h3></div><p>Generate a transient 1,000,001-byte body and POST it to the valid upload location.</p><button class="button secondary js-request" data-test="oversize">Run 413 test</button><div id="oversize-result" class="result" aria-live="polite">No request sent.</div></article><article class="panel"><div class="panel-title"><span class="badge error">405</span><h3>Allowed methods</h3></div><p>POST a small body to the GET-only homepage and inspect status, <code>Allow</code> and body.</p><button class="button secondary js-request" data-test="method">POST /</button><div id="method-result" class="result" aria-live="polite">No request sent.</div></article><article class="panel muted"><div class="panel-title"><span class="badge pending">PENDING</span><h3>DELETE</h3></div><p>The config/parser accepts DELETE, but the current C++ request handler is not implemented. No misleading control is exposed.</p></article></div></section>
+
+<section class="section"><div class="section-heading"><div><p class="eyebrow">Dynamic execution</p><h2>Python CGI</h2></div><p>Only <code>.py</code> is mapped to <code>/usr/bin/python3</code>.</p></div><div class="two-column"><article class="panel"><div class="panel-title"><span class="badge get">GET</span><h3>Environment script</h3></div><p>Execute <code>test.py</code>. Query strings are omitted because path/query separation is pending.</p><a class="button secondary" href="/cgi-bin/test.py">Open CGI response</a></article><article class="panel"><div class="panel-title"><span class="badge pending">TIMEOUT</span><h3>Slow CGI probe</h3></div><p><code>dos.py</code> sleeps for 20 seconds and exercises CGI timeout handling.</p><a class="button secondary" href="/cgi-bin/dos.py">Run slow CGI</a></article></div></section>
+
+<section class="section"><div class="section-heading"><div><p class="eyebrow">Terminal reference</p><h2>CLI tests</h2></div><p>Run from the repository root. Every command is copyable.</p></div><div id="cli-commands" class="commands">
+<div><span>Homepage</span><code>curl -i http://localhost:8081/</code><button>Copy</button></div><div><span>Static file</span><code>curl -i http://localhost:8081/hello.txt</code><button>Copy</button></div><div><span>404</span><code>curl -i http://localhost:8081/missing-page</code><button>Copy</button></div><div><span>Raw POST</span><code>curl -i -X POST -H "Content-Type: text/plain" --data-binary @www/test_uploads/test.txt http://localhost:8081/upload/cli-note.txt</code><button>Copy</button></div><div><span>Multipart</span><code>curl -i -F "files=@www/test_uploads/test.txt" http://localhost:8081/upload</code><button>Copy</button></div><div><span>Multiple files</span><code>curl -i -F "files=@www/test_uploads/test.txt" -F "files=@www/test_uploads/test.jpg" http://localhost:8081/upload</code><button>Copy</button></div><div><span>Autoindex</span><code>curl -i http://localhost:8081/uploads/</code><button>Copy</button></div><div><span>Redirect</span><code>curl -i http://localhost:8081/old</code><button>Copy</button></div><div><span>Server 2</span><code>curl -i http://localhost:8082/</code><button>Copy</button></div></div></section>
+</main><footer><span>Webserv test console</span><a href="http://localhost:8082/">Open Secondary Webserv on :8082</a></footer></body></html>
