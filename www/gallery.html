@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Webserv - Upload Gallery</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .gallery img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>File caricati</h1>
+
+    <a href="/">← Torna alla home</a>
+
+    <div id="gallery" class="gallery"></div>
+
+    <script>
+        fetch("/uploads/")
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const documentUploads =
+                    parser.parseFromString(html, "text/html");
+
+                const links =
+                    documentUploads.querySelectorAll("a");
+
+                const gallery =
+                    document.getElementById("gallery");
+
+                links.forEach(link => {
+                    const filename = link.getAttribute("href");
+
+                    if (!filename)
+                        return;
+
+                    if (!/\.(jpg|jpeg|png|gif|webp)$/i.test(filename))
+                        return;
+
+                    const img = document.createElement("img");
+
+                    img.src = "/uploads/" + filename;
+                    img.alt = filename;
+
+                    gallery.appendChild(img);
+                });
+            });
+    </script>
+
+</body>
+</html>

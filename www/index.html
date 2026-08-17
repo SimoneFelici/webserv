@@ -20,4 +20,19 @@
     <a href="/special/missing">404 personalizzato della location</a>
     <a href="/cgi-bin/">CGIs Location</a>
 </body>
+
+<h2>Test POST multipart</h2>
+
+<form action="/upload"
+      method="POST"
+      enctype="multipart/form-data">
+
+    <input type="file" name="files" multiple>
+    <button type="submit">Upload file</button>
+
+</form>
+
+<a href="/gallery.html">Guarda le foto caricate</a>
+<a href="/uploads/">Guarda tutti i file caricati</a>
+
 </html>

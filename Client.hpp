@@ -61,7 +61,6 @@ class Client
     const std::string &get_response() const;
     std::size_t get_bytes_sent() const;
     void add_bytes_sent(std::size_t bytes);
-    int write_uploaded_file(const std::string &file_path);
 
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
@@ -144,9 +143,13 @@ class Client
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
     std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
 
+    // POST funzioni multipart
+    int write_uploaded_file(const std::string &file_path, const std::string &data);
     bool extract_multipart_boundary(const std::string &content_type, std::string &boundary) const;
     int parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const;
     bool parse_multipart_part_headers(const std::string &headers_block, MultipartPart &part) const;
+    int handle_raw_upload(const LocationConfig *loc);
+    int handle_multipart_upload( const LocationConfig *loc, const std::string &content_type);
 
 
     bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const;

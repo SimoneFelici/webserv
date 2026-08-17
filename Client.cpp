@@ -652,7 +652,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
-int Client::write_uploaded_file(const std::string &file_path)
+int Client::write_uploaded_file(const std::string &file_path, const std::string &data)
 {
     int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // sono i permessi da assegnare al file quando viene creato:
 
@@ -663,13 +663,12 @@ int Client::write_uploaded_file(const std::string &file_path)
         return 500;
     }
 
-    const std::string &body = this->req.body;
     size_t total_written = 0; // tiene traccia del numero di byte già scritti.x
 
-    while (total_written < body.size())
+    while (total_written < data.size())
     {
         // write(file_descriptor, dati_da_scrivere, numero_di_byte);
-        ssize_t written = write(file_fd, body.c_str() + total_written, body.size() - total_written);
+        ssize_t written = write(file_fd, data.c_str() + total_written, data.size() - total_written);
 
         if (written == -1)
         {
@@ -1015,6 +1014,51 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
     return 400;
 }
 
+int Client::handle_raw_upload(const LocationConfig *loc)
+{
+    std::string request_path = this->get_path();
+    std::string file_name;
+
+    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
+        return 400;
+
+    file_name = request_path.substr(loc->path.size());
+
+    if (!file_name.empty() && file_name[0] == '/') 
+        file_name.erase(0, 1);
+
+    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+        return 400;
+
+    std::string file_path = loc->upload_path;
+
+    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+        file_path += "/";
+
+    file_path += file_name;
+    return write_uploaded_file(file_path, this->req.body);
+}
+
+int Client::handle_multipart_upload( const LocationConfig *loc, const std::string &content_type)
+{
+    std::string boundary;
+
+    if (!extract_multipart_boundary(content_type, boundary))
+        return 400;
+
+    std::vector<MultipartPart> parts;
+
+    int status = parse_multipart_body(this->req.body, boundary, parts);
+
+    if (status != 0)
+        return status;
+    (void)loc;
+    // QUI sarà il nostro prossimo lavoro:
+    // attraversare parts e salvare i file.
+
+    return 201;
+}
+
 bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 {
     if (!loc) // Controlla che esista una location
@@ -1057,36 +1101,16 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
         build_error_response(500, config, loc);
         return true;
     }
+    std::string content_type = this->get_header("content-type");
 
-    std::string request_path = this->get_path();
-    std::string file_name;
-
-    if (request_path.compare(0, loc->path.size(), loc->path) != 0)
-    {
-        build_error_response(400, config, loc);
-        return true;
-    }
-
-    file_name = request_path.substr(loc->path.size());
-
-    if (!file_name.empty() && file_name[0] == '/')
-        file_name.erase(0, 1);
-
-    // Validiamo il nome
-    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
-    {
-        build_error_response(400, config, loc);
-        return true;
-    }
-
-    std::string file_path = loc->upload_path;
-
-    if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
-        file_path += "/";
-
-    file_path += file_name;
-
-    int upload_status = write_uploaded_file(file_path);
+    std::string lower_content_type = content_type;
+    to_lower(lower_content_type);
+    int upload_status;
+    // Gestione multipart
+    if (lower_content_type.find("multipart/form-data") != std::string::npos)
+        upload_status = handle_multipart_upload(loc, content_type);
+    else
+        upload_status = handle_raw_upload(loc);
 
     if (upload_status != 201)
     {
