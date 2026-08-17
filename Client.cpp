@@ -404,6 +404,7 @@ std::string Client::get_error_reason(int error_code) const
     error_codes[403] = "Forbidden";
     error_codes[404] = "Not Found";
     error_codes[405] = "Method Not Allowed";
+    error_codes[409] = "Conflict";
     error_codes[413] = "Payload Too Large";
     error_codes[431] = "Request Header Fields Too Large";
     error_codes[500] = "Internal Server Error";
@@ -654,11 +655,13 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
 
 int Client::write_uploaded_file(const std::string &file_path, const std::string &data)
 {
-    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // sono i permessi da assegnare al file quando viene creato:
+    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644); // sono i permessi da assegnare al file quando viene creato, lo crea solo se non esiste gia
 
     if (file_fd == -1)
     {
-        if (errno == EACCES) // EACCES significa accesso negato.
+        if (errno == EEXIST)
+            return 409;
+        if (errno == EACCES)
             return 403;
         return 500;
     }
@@ -672,11 +675,7 @@ int Client::write_uploaded_file(const std::string &file_path, const std::string 
 
         if (written == -1)
         {
-            int saved_errno = errno; // Ho salvato errno perché close() potrebbe modificarlo e farti perdere la causa reale dell’errore di write().
             close(file_fd);
-
-            if (saved_errno == EACCES)
-                return 403;
             return 500;
         }
 
@@ -1024,7 +1023,7 @@ int Client::handle_raw_upload(const LocationConfig *loc)
 
     file_name = request_path.substr(loc->path.size());
 
-    if (!file_name.empty() && file_name[0] == '/') 
+    if (!file_name.empty() && file_name[0] == '/')
         file_name.erase(0, 1);
 
     if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
@@ -1039,7 +1038,7 @@ int Client::handle_raw_upload(const LocationConfig *loc)
     return write_uploaded_file(file_path, this->req.body);
 }
 
-int Client::handle_multipart_upload( const LocationConfig *loc, const std::string &content_type)
+int Client::handle_multipart_upload(const LocationConfig *loc, const std::string &content_type)
 {
     std::string boundary;
 
@@ -1062,7 +1061,7 @@ int Client::handle_multipart_upload( const LocationConfig *loc, const std::strin
 
         std::string file_name = parts[i].filename;
 
-        if (file_name == "." || file_name == ".." || file_name.find('\\') != std::string::npos)
+        if (file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
             return 400;
 
         std::string file_path = loc->upload_path;
