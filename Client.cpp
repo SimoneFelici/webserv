@@ -1052,9 +1052,36 @@ int Client::handle_multipart_upload( const LocationConfig *loc, const std::strin
 
     if (status != 0)
         return status;
-    (void)loc;
-    // QUI sarà il nostro prossimo lavoro:
-    // attraversare parts e salvare i file.
+
+    bool file_saved = false;
+
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (parts[i].filename.empty())
+            continue;
+
+        std::string file_name = parts[i].filename;
+
+        if (file_name == "." || file_name == ".." || file_name.find('\\') != std::string::npos)
+            return 400;
+
+        std::string file_path = loc->upload_path;
+
+        if (!file_path.empty() && file_path[file_path.size() - 1] != '/')
+            file_path += "/";
+
+        file_path += file_name;
+
+        int upload_status = write_uploaded_file(file_path, parts[i].data);
+
+        if (upload_status != 201)
+            return upload_status;
+
+        file_saved = true;
+    }
+
+    if (!file_saved)
+        return 400;
 
     return 201;
 }

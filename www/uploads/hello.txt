@@ -1,1 +1,1 @@
-GET di file statico riuscita.
+4GET di file statico riuscita.
