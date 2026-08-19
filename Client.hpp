@@ -65,6 +65,7 @@ class Client
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
     bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
+    bool handle_delete_req(ServerConfig &config, const LocationConfig *loc);
 
     // CGI
     bool parse_cgi_output(const std::string &output);

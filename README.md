@@ -435,3 +435,36 @@ send()
 close_client()
 → chiude e rimuove il client quando la risposta è completa
 ```
+
+# main lifecycle di una request non-CGI del server.
+
+```
+                 EPOLL
+                   │
+       ┌───────────┴───────────┐
+       │                       │
+    EPOLLIN                 EPOLLOUT
+       │                       │
+       ↓                       ↓
+ listener?                   client
+   │                           │
+   ├── sì → accept()           ↓
+   │                       send()
+   │                           │
+   └── no                      ↓
+       ↓                   tutto inviato?
+     recv()                   │
+       │                 ┌────┴────┐
+       ↓                 no        sì
+ request completa?       │          │
+   │                     ↓          ↓
+ ┌─┴────┐            epoll_wait  close
+ no    sì
+ │      │
+ ↓      ↓
+epoll  prepare_response
+       │
+       ↓
+    EPOLLOUT
+
+```
