@@ -1459,6 +1459,27 @@ bool Client::parse_cgi_output(const std::string &output)
 
         if (lower == "content-type")
             this->res.content_type = value;
+        else if (lower == "status")
+        {
+            size_t space = value.find(' ');
+            std::string code_str = value;
+
+            if (space != std::string::npos)
+                code_str = value.substr(0, space);
+
+            long code;
+
+            if (!string_to_long(code_str, code) || code < 100 || code > 599)
+                return false;
+
+            this->res.status_code = static_cast<int>(code);
+
+            if (space != std::string::npos && space + 1 < value.size())
+                this->res.reason = value.substr(space + 1);
+            else
+                this->res.reason = get_error_reason(static_cast<int>(code));
+        }
+
         else if (lower != "content-length")
             this->res.headers[key] = value;
     }
