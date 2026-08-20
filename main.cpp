@@ -1,6 +1,6 @@
+#include "Config.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
-#include "Config.hpp"
 
 int main(int argc, char **argv)
 {
@@ -9,9 +9,11 @@ int main(int argc, char **argv)
         std::cerr << "Error: usage: " << argv[0] << " conf_file" << std::endl;
         return 1;
     }
+    signal(SIGPIPE, SIG_IGN);
+
     Server server;
     Config conf;
-    //testing parsing config
+    // testing parsing config
     if (!conf.parse_config(argv[1]))
         return 1;
 
@@ -20,11 +22,9 @@ int main(int argc, char **argv)
     //     return 1;
     if (!server.setup(configs))
         return 1;
-    
+
     if (!server.run())
         return 1;
 
     return 0;
-    
-
 }
