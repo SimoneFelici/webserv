@@ -41,7 +41,7 @@ class Client
     // TODO: USE AFTER SENDING THE RESPONSE
     void clear_request();
 
-    bool parse_request();
+    bool parse_request(std::size_t max_body_size);
     bool req_done() const;
     bool req_error() const;
     bool prepare_error_response(int error_code, const ServerConfig &config);
@@ -53,6 +53,7 @@ class Client
     const std::string &get_body() const;
     std::string get_header(const std::string &key) const;
     bool is_headers_too_large() const;
+    bool is_body_too_large() const;
     const std::string &get_query_string() const;
 
     // Response
@@ -122,6 +123,7 @@ class Client
     HttpResponse res;
 
     bool headers_too_large;
+    bool body_too_large;
 
     int cgi_fd;
     pid_t cgi_pid;
@@ -131,7 +133,8 @@ class Client
     bool parse_request_line(std::size_t &pos);
     bool parse_header_line(const std::string &line);
     bool parse_headers(std::size_t &pos);
-    bool parse_body(std::size_t &pos);
+    bool parse_body(std::size_t &pos, std::size_t max_body_size);
+    bool parse_chunked_body(std::size_t pos, std::size_t max_body_size);
     void build_error_response(int error_code, const ServerConfig &config, const LocationConfig *loc);
     void build_default_error_response(int error_code);
     void build_response_buffer();
@@ -149,8 +152,7 @@ class Client
     int parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const;
     bool parse_multipart_part_headers(const std::string &headers_block, MultipartPart &part) const;
     int handle_raw_upload(const LocationConfig *loc);
-    int handle_multipart_upload( const LocationConfig *loc, const std::string &content_type);
-
+    int handle_multipart_upload(const LocationConfig *loc, const std::string &content_type);
 
     bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const;
 };

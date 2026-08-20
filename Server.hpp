@@ -17,11 +17,15 @@
 struct CgiProcess
 {
     int client_fd;
+    int out_fd;
+    int in_fd;
     pid_t pid;
     std::string buffer;
+    std::string body;
+    size_t body_sent;
     time_t start;
 
-    CgiProcess() : client_fd(-1), pid(-1), start(0) {}
+    CgiProcess() : client_fd(-1), out_fd(-1), in_fd(-1), pid(-1), body_sent(0), start(0) {}
 };
 
 class Server
