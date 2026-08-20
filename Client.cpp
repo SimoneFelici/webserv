@@ -5,9 +5,9 @@
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -30,6 +30,11 @@ const std::string &Client::get_request() const
 bool Client::is_headers_too_large() const
 {
     return (this->headers_too_large);
+}
+
+bool Client::is_body_too_large() const
+{
+    return this->body_too_large;
 }
 
 const std::string &Client::get_query_string() const
@@ -209,8 +214,78 @@ bool Client::parse_headers(std::size_t &pos)
     return true;
 }
 
-bool Client::parse_body(std::size_t &pos)
+bool hex_to_size(const std::string &s, size_t &result)
 {
+    if (s.empty() || s.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+        return false;
+
+    std::stringstream ss(s);
+
+    ss >> std::hex >> result;
+
+    return !ss.fail();
+}
+
+bool Client::parse_chunked_body(std::size_t pos, std::size_t max_body_size)
+{
+    std::string body;
+
+    while (true)
+    {
+        size_t line_end = this->request_buffer.find("\r\n", pos);
+
+        if (line_end == std::string::npos)
+            return true;
+
+        size_t chunk_size;
+
+        if (!hex_to_size(this->request_buffer.substr(pos, line_end - pos), chunk_size))
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        pos = line_end + 2;
+
+        if (chunk_size == 0)
+        {
+            req.body = body;
+            req.state = HttpRequest::DONE;
+            return true;
+        }
+
+        // No content-len:
+        if (body.size() + chunk_size > max_body_size)
+        {
+            this->body_too_large = true;
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        if (this->request_buffer.size() < pos + chunk_size + 2)
+            return true;
+
+        if (this->request_buffer[pos + chunk_size] != '\r' ||
+            this->request_buffer[pos + chunk_size + 1] != '\n')
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        body.append(this->request_buffer, pos, chunk_size);
+        pos += chunk_size + 2;
+    }
+}
+
+bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
+{
+    std::string t = get_header("transfer-encoding");
+
+    to_lower(t);
+
+    if (t == "chunked")
+        return parse_chunked_body(pos, max_body_size);
+
     if (req.headers.count("content-length"))
     {
         const std::string &cl = req.headers["content-length"];
@@ -242,7 +317,7 @@ bool Client::parse_body(std::size_t &pos)
     return true;
 }
 
-bool Client::parse_request()
+bool Client::parse_request(std::size_t max_body_size)
 {
     std::size_t pos = 0;
     if (req.state == HttpRequest::PARSING_BODY)
@@ -261,7 +336,7 @@ bool Client::parse_request()
                 return false;
             break;
         case HttpRequest::PARSING_BODY:
-            return parse_body(pos);
+            return parse_body(pos, max_body_size);
         case HttpRequest::DONE:
             return true;
         case HttpRequest::ERROR:

@@ -358,11 +358,14 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    client.parse_request();
-
+    client.parse_request(config.client_max_body_size);
     if (client.req_error())
     {
-        if (!client.prepare_error_response(400, config))
+        int code = 400;
+        if (client.is_body_too_large())
+            code = 413;
+
+        if (!client.prepare_error_response(code, config))
             return false;
         if (DEBUG)
             client.print_response();
