@@ -1401,10 +1401,31 @@ bool Client::finish_cgi(const std::string &output, ServerConfig &config)
 bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter)
 {
     int fds[2];
+    int in_fds[2];
+
     if (pipe(fds) == -1)
     {
         std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
         return false;
+    }
+
+    if (pipe(in_fds) == -1)
+    {
+        std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
+        close(fds[0]);
+        close(fds[1]);
+        return false;
+    }
+
+    std::string script_dir;
+    std::string script_file = script_path;
+
+    size_t slash = script_path.rfind('/');
+
+    if (slash != std::string::npos)
+    {
+        script_dir = script_path.substr(0, slash);
+        script_file = script_path.substr(slash + 1);
     }
 
     std::vector<std::string> env;
@@ -1413,7 +1434,7 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     env.push_back("REQUEST_METHOD=" + this->req.method);
     env.push_back("QUERY_STRING=" + this->req.query_string);
     env.push_back("SCRIPT_NAME=" + script_name);
-    env.push_back("SCRIPT_FILENAME=" + script_path);
+    env.push_back("SCRIPT_FILENAME=" + script_file);
     env.push_back("PATH_INFO=");
     env.push_back("CONTENT_LENGTH=0");
     env.push_back("CONTENT_TYPE=");
@@ -1430,25 +1451,41 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
         std::cerr << "Error: fork failed: " << strerror(errno) << std::endl;
         close(fds[0]);
         close(fds[1]);
+        close(in_fds[0]);
+        close(in_fds[1]);
         return false;
     }
 
     if (pid == 0)
     {
         close(fds[0]);
+        close(in_fds[1]);
+
         if (dup2(fds[1], STDOUT_FILENO) == -1)
             _exit(1);
+
+        if (dup2(in_fds[0], STDIN_FILENO) == -1)
+            _exit(1);
+
         close(fds[1]);
+        close(in_fds[0]);
+
+        if (!script_dir.empty() && chdir(script_dir.c_str()) == -1)
+            _exit(1);
 
         char *argv[3];
         argv[0] = const_cast<char *>(interpreter.c_str());
-        argv[1] = const_cast<char *>(script_path.c_str());
+        argv[1] = const_cast<char *>(script_file.c_str());
         argv[2] = NULL;
 
         execve(argv[0], argv, &envp[0]);
         _exit(1);
     }
+
     close(fds[1]);
+    close(in_fds[0]);
+
+    close(in_fds[1]);
 
     if (!set_nonblocking(fds[0]))
     {

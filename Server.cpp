@@ -148,6 +148,27 @@ bool Server::accept_client(int client_fd, size_t config_index)
 
 void Server::close_client(int client_fd)
 {
+    std::vector<int> orphans;
+
+    for (std::map<int, CgiProcess>::iterator it = this->cgi_processes.begin();
+         it != this->cgi_processes.end(); ++it)
+    {
+        if (it->second.client_fd == client_fd)
+            orphans.push_back(it->first);
+    }
+
+    for (size_t i = 0; i < orphans.size(); ++i)
+    {
+        std::map<int, CgiProcess>::iterator it = this->cgi_processes.find(orphans[i]);
+
+        if (it == this->cgi_processes.end())
+            continue;
+
+        kill(it->second.pid, SIGKILL);
+        waitpid(it->second.pid, NULL, 0);
+        close_cgi(orphans[i]);
+    }
+
     if (this->epoll_fd != -1)
         epoll_ctl(this->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
 
