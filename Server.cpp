@@ -1,5 +1,5 @@
-#include "Config.hpp"
 #include "Server.hpp"
+#include "Config.hpp"
 #include "webserv.hpp"
 
 Server::Server() : running(false), epoll_fd(-1)
@@ -184,6 +184,30 @@ void Server::close_all_clients()
     {
         close_client(this->clients.begin()->first);
     }
+}
+
+void Server::check_client_timeouts()
+{
+    time_t now = time(NULL);
+    std::vector<int> expired;
+
+    for (std::map<int, Client>::iterator it = this->clients.begin();
+         it != this->clients.end(); ++it)
+    {
+        if (!it->second.req_done() && !it->second.req_error() && now - it->second.get_last_activity() >= CLIENT_TIMEOUT)
+            expired.push_back(it->first);
+    }
+
+    // DEBUG
+    for (size_t i = 0; i < expired.size(); ++i)
+    {
+        std::cout << "Client timeout, closing fd: "
+                  << expired[i] << std::endl;
+
+        close_client(expired[i]);
+    }
+    for (size_t i = 0; i < expired.size(); ++i)
+        close_client(expired[i]);
 }
 
 void Server::check_cgi_timeouts()
@@ -397,6 +421,8 @@ bool Server::handle_client_read(int client_fd)
         std::cout << "recv failed and/or client disconnected: " << client_fd << std::endl;
         return false;
     }
+
+    client.update_last_activity();
 
     if (!client.has_full_headers(temp, bytes_read))
     {
@@ -651,6 +677,7 @@ bool Server::run()
                 }
             }
         }
+        check_client_timeouts();
     }
 
     close_all_clients();

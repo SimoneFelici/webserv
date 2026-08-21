@@ -6,9 +6,9 @@
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1), last_activity(time(NULL)) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1), last_activity(time(NULL)) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -41,6 +41,16 @@ bool Client::is_body_too_large() const
 const std::string &Client::get_query_string() const
 {
     return this->req.query_string;
+}
+
+time_t Client::get_last_activity() const
+{
+    return this->last_activity;
+}
+
+void Client::update_last_activity()
+{
+    this->last_activity = time(NULL);
 }
 
 bool Client::prepare_error_response(int error_code, const ServerConfig &config)

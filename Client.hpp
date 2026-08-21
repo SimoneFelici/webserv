@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
+#include <ctime>
 
 struct ServerConfig;
 struct LocationConfig;
@@ -55,6 +56,8 @@ class Client
     bool is_headers_too_large() const;
     bool is_body_too_large() const;
     const std::string &get_query_string() const;
+    time_t get_last_activity() const;
+    void update_last_activity();
 
     // Response
     bool clear_response();
@@ -130,6 +133,8 @@ class Client
     int cgi_fd;
     int cgi_in_fd;
     pid_t cgi_pid;
+
+    time_t last_activity;
 
     std::string get_error_reason(int error_code) const;
 
