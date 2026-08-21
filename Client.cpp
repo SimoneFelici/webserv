@@ -5,9 +5,9 @@
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -351,6 +351,11 @@ int Client::get_cgi_fd() const
     return this->cgi_fd;
 }
 
+int Client::get_cgi_in_fd() const
+{
+    return this->cgi_in_fd;
+}
+
 pid_t Client::get_cgi_pid() const
 {
     return this->cgi_pid;
@@ -359,6 +364,7 @@ pid_t Client::get_cgi_pid() const
 void Client::clear_cgi()
 {
     this->cgi_fd = -1;
+    this->cgi_in_fd = -1;
     this->cgi_pid = -1;
 }
 
@@ -1502,6 +1508,8 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
         script_dir = script_path.substr(0, slash);
         script_file = script_path.substr(slash + 1);
     }
+    std::stringstream c_len;
+    c_len << this->req.body.size();
 
     std::vector<std::string> env;
     env.push_back("GATEWAY_INTERFACE=CGI/1.1");
@@ -1511,8 +1519,8 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     env.push_back("SCRIPT_NAME=" + script_name);
     env.push_back("SCRIPT_FILENAME=" + script_file);
     env.push_back("PATH_INFO=");
-    env.push_back("CONTENT_LENGTH=0");
-    env.push_back("CONTENT_TYPE=");
+    env.push_back("CONTENT_LENGTH=" + c_len.str());
+    env.push_back("CONTENT_TYPE=" + this->get_header("content-type"));
     env.push_back("REDIRECT_STATUS=200");
     std::vector<char *> envp;
     for (size_t i = 0; i < env.size(); ++i)
@@ -1560,14 +1568,32 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     close(fds[1]);
     close(in_fds[0]);
 
-    close(in_fds[1]);
-
     if (!set_nonblocking(fds[0]))
     {
         close(fds[0]);
+        close(in_fds[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
         return false;
+    }
+
+    if (this->req.body.empty())
+    {
+        close(in_fds[1]);
+        this->cgi_in_fd = -1;
+    }
+    else
+    {
+        if (!set_nonblocking(in_fds[1]))
+        {
+            close(fds[0]);
+            close(in_fds[1]);
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            return false;
+        }
+
+        this->cgi_in_fd = in_fds[1];
     }
 
     this->cgi_fd = fds[0];
@@ -1605,9 +1631,28 @@ bool Client::prepare_response(ServerConfig &config)
     if (split_cgi_path(loc, script_name, interpreter))
     {
         std::string script_path = build_file_path(config, loc);
+        struct stat script_stat;
 
         if (DEBUG)
             std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
+
+        if (stat(script_path.c_str(), &script_stat) == -1)
+        {
+            if (errno == EACCES)
+                build_error_response(403, config, loc);
+            else
+                build_error_response(404, config, loc);
+
+            build_response_buffer();
+            return true;
+        }
+
+        if (!S_ISREG(script_stat.st_mode))
+        {
+            build_error_response(403, config, loc);
+            build_response_buffer();
+            return true;
+        }
 
         if (!exec_cgi(script_path, script_name, interpreter))
         {

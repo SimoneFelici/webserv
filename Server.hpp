@@ -17,7 +17,6 @@
 struct CgiProcess
 {
     int client_fd;
-    int out_fd;
     int in_fd;
     pid_t pid;
     std::string buffer;
@@ -25,7 +24,7 @@ struct CgiProcess
     size_t body_sent;
     time_t start;
 
-    CgiProcess() : client_fd(-1), out_fd(-1), in_fd(-1), pid(-1), body_sent(0), start(0) {}
+    CgiProcess() : client_fd(-1), in_fd(-1), pid(-1), body_sent(0), start(0) {}
 };
 
 class Server
@@ -55,7 +54,9 @@ class Server
     bool handle_client_write(int client_fd);
     void close_all_clients();
     bool handle_cgi_read(int cgi_fd);
+    bool handle_cgi_write(int in_fd);
     void close_cgi(int cgi_fd);
+    void close_cgi_in(int in_fd);
     void check_cgi_timeouts();
 
     // Tutte le configurazioni lette dai blocchi "server" del file .conf.
@@ -80,4 +81,5 @@ class Server
     int epoll_fd;
 
     std::map<int, CgiProcess> cgi_processes;
+    std::map<int, int> cgi_in_to_out;
 };
