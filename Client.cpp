@@ -67,15 +67,15 @@ void Client::print_request() const
     std::cout << "Version: " << req.version << std::endl;
     for (std::map<std::string, std::string>::const_iterator it = req.headers.begin(); it != req.headers.end(); ++it)
         std::cout << it->first << ": " << it->second << std::endl;
-    if (!req.body.empty())
-        std::cout << "Body: " << req.body << std::endl;
+    // if (!req.body.empty())
+    //     std::cout << "Body: " << req.body << std::endl;
     std::cout << "---------" << std::endl;
 }
 
 void Client::print_response() const
 {
     std::cout << "\n--- RESPONSE ---" << std::endl;
-    std::cout << this->response_buffer << std::endl;
+//    std::cout << this->response_buffer << std::endl;
     std::cout << "---------" << std::endl;
 }
 

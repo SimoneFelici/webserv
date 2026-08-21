@@ -12,7 +12,7 @@
 #define MAX_EPOLL_EVENTS 1024
 
 #include <ctime>
-#define DEBUG 1
+#define DEBUG 0
 
 struct CgiProcess
 {
