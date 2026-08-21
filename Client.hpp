@@ -41,7 +41,7 @@ class Client
     // TODO: USE AFTER SENDING THE RESPONSE
     void clear_request();
 
-    bool parse_request();
+    bool parse_request(std::size_t max_body_size);
     bool req_done() const;
     bool req_error() const;
     bool prepare_error_response(int error_code, const ServerConfig &config);
@@ -53,6 +53,7 @@ class Client
     const std::string &get_body() const;
     std::string get_header(const std::string &key) const;
     bool is_headers_too_large() const;
+    bool is_body_too_large() const;
     const std::string &get_query_string() const;
 
     // Response
@@ -69,8 +70,9 @@ class Client
 
     // CGI
     bool parse_cgi_output(const std::string &output);
-    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter);
+    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &path_info, const std::string &interpreter);
     int get_cgi_fd() const;
+    int get_cgi_in_fd() const;
     pid_t get_cgi_pid() const;
     void clear_cgi();
     bool finish_cgi(const std::string &output, ServerConfig &config);
@@ -123,8 +125,10 @@ class Client
     HttpResponse res;
 
     bool headers_too_large;
+    bool body_too_large;
 
     int cgi_fd;
+    int cgi_in_fd;
     pid_t cgi_pid;
 
     std::string get_error_reason(int error_code) const;
@@ -132,7 +136,8 @@ class Client
     bool parse_request_line(std::size_t &pos);
     bool parse_header_line(const std::string &line);
     bool parse_headers(std::size_t &pos);
-    bool parse_body(std::size_t &pos);
+    bool parse_body(std::size_t &pos, std::size_t max_body_size);
+    bool parse_chunked_body(std::size_t pos, std::size_t max_body_size);
     void build_error_response(int error_code, const ServerConfig &config, const LocationConfig *loc);
     void build_default_error_response(int error_code);
     void build_response_buffer();
@@ -143,6 +148,7 @@ class Client
     int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
     std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
+    std::string build_file_path(const ServerConfig &config, const LocationConfig *loc, const std::string &url_path) const;
 
     // POST funzioni multipart
     int write_uploaded_file(const std::string &file_path, const std::string &data);
@@ -150,8 +156,7 @@ class Client
     int parse_multipart_body(const std::string &body, const std::string &boundary, std::vector<MultipartPart> &parts) const;
     bool parse_multipart_part_headers(const std::string &headers_block, MultipartPart &part) const;
     int handle_raw_upload(const LocationConfig *loc);
-    int handle_multipart_upload( const LocationConfig *loc, const std::string &content_type);
+    int handle_multipart_upload(const LocationConfig *loc, const std::string &content_type);
 
-
-    bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const;
+    bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &path_info, std::string &interpreter) const;
 };

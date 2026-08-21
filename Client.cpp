@@ -6,9 +6,9 @@
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), cgi_fd(-1), cgi_pid(-1) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -31,6 +31,11 @@ const std::string &Client::get_request() const
 bool Client::is_headers_too_large() const
 {
     return (this->headers_too_large);
+}
+
+bool Client::is_body_too_large() const
+{
+    return this->body_too_large;
 }
 
 const std::string &Client::get_query_string() const
@@ -210,8 +215,78 @@ bool Client::parse_headers(std::size_t &pos)
     return true;
 }
 
-bool Client::parse_body(std::size_t &pos)
+bool hex_to_size(const std::string &s, size_t &result)
 {
+    if (s.empty() || s.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+        return false;
+
+    std::stringstream ss(s);
+
+    ss >> std::hex >> result;
+
+    return !ss.fail();
+}
+
+bool Client::parse_chunked_body(std::size_t pos, std::size_t max_body_size)
+{
+    std::string body;
+
+    while (true)
+    {
+        size_t line_end = this->request_buffer.find("\r\n", pos);
+
+        if (line_end == std::string::npos)
+            return true;
+
+        size_t chunk_size;
+
+        if (!hex_to_size(this->request_buffer.substr(pos, line_end - pos), chunk_size))
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        pos = line_end + 2;
+
+        if (chunk_size == 0)
+        {
+            req.body = body;
+            req.state = HttpRequest::DONE;
+            return true;
+        }
+
+        // No content-len:
+        if (body.size() + chunk_size > max_body_size)
+        {
+            this->body_too_large = true;
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        if (this->request_buffer.size() < pos + chunk_size + 2)
+            return true;
+
+        if (this->request_buffer[pos + chunk_size] != '\r' ||
+            this->request_buffer[pos + chunk_size + 1] != '\n')
+        {
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
+        body.append(this->request_buffer, pos, chunk_size);
+        pos += chunk_size + 2;
+    }
+}
+
+bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
+{
+    std::string t = get_header("transfer-encoding");
+
+    to_lower(t);
+
+    if (t == "chunked")
+        return parse_chunked_body(pos, max_body_size);
+
     if (req.headers.count("content-length"))
     {
         const std::string &cl = req.headers["content-length"];
@@ -242,7 +317,7 @@ bool Client::parse_body(std::size_t &pos)
     return true;
 }
 
-bool Client::parse_request()
+bool Client::parse_request(std::size_t max_body_size)
 {
     std::size_t pos = 0;
     if (req.state == HttpRequest::PARSING_BODY)
@@ -261,7 +336,7 @@ bool Client::parse_request()
                 return false;
             break;
         case HttpRequest::PARSING_BODY:
-            return parse_body(pos);
+            return parse_body(pos, max_body_size);
         case HttpRequest::DONE:
             return true;
         case HttpRequest::ERROR:
@@ -276,6 +351,11 @@ int Client::get_cgi_fd() const
     return this->cgi_fd;
 }
 
+int Client::get_cgi_in_fd() const
+{
+    return this->cgi_in_fd;
+}
+
 pid_t Client::get_cgi_pid() const
 {
     return this->cgi_pid;
@@ -284,6 +364,7 @@ pid_t Client::get_cgi_pid() const
 void Client::clear_cgi()
 {
     this->cgi_fd = -1;
+    this->cgi_in_fd = -1;
     this->cgi_pid = -1;
 }
 
@@ -532,7 +613,8 @@ static int build_autoindex_body(const std::string &dir_path, const std::string &
     return 200;
 }
 
-std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc) const
+std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc,
+                                    const std::string &url_path) const
 {
     std::string root;
 
@@ -541,7 +623,7 @@ std::string Client::build_file_path(const ServerConfig &config, const LocationCo
     else
         root = config.root;
 
-    std::string relative_path = this->get_path();
+    std::string relative_path = url_path;
 
     if (loc && loc->path != "/" &&
         relative_path.compare(0, loc->path.size(), loc->path) == 0)
@@ -556,6 +638,11 @@ std::string Client::build_file_path(const ServerConfig &config, const LocationCo
         return root;
 
     return root + relative_path;
+}
+
+std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc) const
+{
+    return build_file_path(config, loc, this->get_path());
 }
 
 bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
@@ -1347,7 +1434,7 @@ void Client::build_redirect_response(const LocationConfig &loc)
     this->res.headers["Location"] = loc.redirect_url;
 }
 
-bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const
+bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &path_info, std::string &interpreter) const
 {
     if (!loc || loc->cgi_handlers.empty())
         return false;
@@ -1358,15 +1445,21 @@ bool Client::split_cgi_path(const LocationConfig *loc, std::string &script_name,
          it != loc->cgi_handlers.end(); ++it)
     {
         const std::string &ext = it->first;
+        size_t pos = 0;
 
-        if (path.size() < ext.size())
-            continue;
-
-        if (path.compare(path.size() - ext.size(), ext.size(), ext) == 0)
+        while ((pos = path.find(ext, pos)) != std::string::npos)
         {
-            script_name = path;
-            interpreter = it->second;
-            return true;
+            size_t end = pos + ext.size();
+
+            if (end == path.size() || path[end] == '/')
+            {
+                script_name = path.substr(0, end);
+                path_info = path.substr(end);
+                interpreter = it->second;
+                return true;
+            }
+
+            pos = end;
         }
     }
     return false;
@@ -1425,6 +1518,27 @@ bool Client::parse_cgi_output(const std::string &output)
 
         if (lower == "content-type")
             this->res.content_type = value;
+        else if (lower == "status")
+        {
+            size_t space = value.find(' ');
+            std::string code_str = value;
+
+            if (space != std::string::npos)
+                code_str = value.substr(0, space);
+
+            long code;
+
+            if (!string_to_long(code_str, code) || code < 100 || code > 599)
+                return false;
+
+            this->res.status_code = static_cast<int>(code);
+
+            if (space != std::string::npos && space + 1 < value.size())
+                this->res.reason = value.substr(space + 1);
+            else
+                this->res.reason = get_error_reason(static_cast<int>(code));
+        }
+
         else if (lower != "content-length")
             this->res.headers[key] = value;
     }
@@ -1445,14 +1559,41 @@ bool Client::finish_cgi(const std::string &output, ServerConfig &config)
     return true;
 }
 
-bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter)
+bool Client::exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &path_info, const std::string &interpreter)
 {
     int fds[2];
+    int in_fds[2];
+
     if (pipe(fds) == -1)
     {
         std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
         return false;
     }
+
+    if (pipe(in_fds) == -1)
+    {
+        std::cerr << "Error: pipe failed: " << strerror(errno) << std::endl;
+        close(fds[0]);
+        close(fds[1]);
+        return false;
+    }
+
+    std::string script_dir;
+    std::string script_file = script_path;
+
+    size_t slash = script_path.rfind('/');
+
+    if (slash != std::string::npos)
+    {
+        script_dir = script_path.substr(0, slash);
+        script_file = script_path.substr(slash + 1);
+    }
+    std::stringstream c_len;
+    c_len << this->req.body.size();
+
+    std::string request_uri = this->req.path;
+    if (!this->req.query_string.empty())
+        request_uri += "?" + this->req.query_string;
 
     std::vector<std::string> env;
     env.push_back("GATEWAY_INTERFACE=CGI/1.1");
@@ -1460,10 +1601,12 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     env.push_back("REQUEST_METHOD=" + this->req.method);
     env.push_back("QUERY_STRING=" + this->req.query_string);
     env.push_back("SCRIPT_NAME=" + script_name);
-    env.push_back("SCRIPT_FILENAME=" + script_path);
-    env.push_back("PATH_INFO=");
-    env.push_back("CONTENT_LENGTH=0");
-    env.push_back("CONTENT_TYPE=");
+    env.push_back("SCRIPT_FILENAME=" + script_file);
+    env.push_back("REQUEST_URI=" + request_uri);
+    env.push_back("HTTP_HOST=" + this->get_header("host"));
+    env.push_back("PATH_INFO=" + path_info);
+    env.push_back("CONTENT_LENGTH=" + c_len.str());
+    env.push_back("CONTENT_TYPE=" + this->get_header("content-type"));
     env.push_back("REDIRECT_STATUS=200");
     std::vector<char *> envp;
     for (size_t i = 0; i < env.size(); ++i)
@@ -1477,32 +1620,66 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
         std::cerr << "Error: fork failed: " << strerror(errno) << std::endl;
         close(fds[0]);
         close(fds[1]);
+        close(in_fds[0]);
+        close(in_fds[1]);
         return false;
     }
 
     if (pid == 0)
     {
         close(fds[0]);
+        close(in_fds[1]);
+
         if (dup2(fds[1], STDOUT_FILENO) == -1)
             _exit(1);
+
+        if (dup2(in_fds[0], STDIN_FILENO) == -1)
+            _exit(1);
+
         close(fds[1]);
+        close(in_fds[0]);
+
+        if (!script_dir.empty() && chdir(script_dir.c_str()) == -1)
+            _exit(1);
 
         char *argv[3];
         argv[0] = const_cast<char *>(interpreter.c_str());
-        argv[1] = const_cast<char *>(script_path.c_str());
+        argv[1] = const_cast<char *>(script_file.c_str());
         argv[2] = NULL;
 
         execve(argv[0], argv, &envp[0]);
         _exit(1);
     }
+
     close(fds[1]);
+    close(in_fds[0]);
 
     if (!set_nonblocking(fds[0]))
     {
         close(fds[0]);
+        close(in_fds[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
         return false;
+    }
+
+    if (this->req.body.empty())
+    {
+        close(in_fds[1]);
+        this->cgi_in_fd = -1;
+    }
+    else
+    {
+        if (!set_nonblocking(in_fds[1]))
+        {
+            close(fds[0]);
+            close(in_fds[1]);
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            return false;
+        }
+
+        this->cgi_in_fd = in_fds[1];
     }
 
     this->cgi_fd = fds[0];
@@ -1536,15 +1713,37 @@ bool Client::prepare_response(ServerConfig &config)
 
     std::string script_name;
     std::string interpreter;
+    std::string path_info;
 
-    if (split_cgi_path(loc, script_name, interpreter))
+    if (split_cgi_path(loc, script_name, path_info, interpreter))
     {
-        std::string script_path = build_file_path(config, loc);
+        std::string script_path = build_file_path(config, loc, script_name);
+        struct stat script_stat;
+
+        if (stat(script_path.c_str(), &script_stat) == -1)
+        {
+            if (errno == EACCES)
+                build_error_response(403, config, loc);
+            else
+                build_error_response(404, config, loc);
+            build_response_buffer();
+            return true;
+        }
+
+        if (!S_ISREG(script_stat.st_mode))
+        {
+            build_error_response(403, config, loc);
+            build_response_buffer();
+            return true;
+        }
+
+        std::string cgi_path_info = script_name + path_info;
 
         if (DEBUG)
-            std::cout << "CGI: " << interpreter << " " << script_path << std::endl;
+            std::cout << "CGI: " << interpreter << " " << script_path
+                      << " PATH_INFO=" << cgi_path_info << std::endl;
 
-        if (!exec_cgi(script_path, script_name, interpreter))
+        if (!exec_cgi(script_path, script_name, cgi_path_info, interpreter))
         {
             build_error_response(500, config, loc);
             build_response_buffer();

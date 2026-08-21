@@ -148,6 +148,27 @@ bool Server::accept_client(int client_fd, size_t config_index)
 
 void Server::close_client(int client_fd)
 {
+    std::vector<int> orphans;
+
+    for (std::map<int, CgiProcess>::iterator it = this->cgi_processes.begin();
+         it != this->cgi_processes.end(); ++it)
+    {
+        if (it->second.client_fd == client_fd)
+            orphans.push_back(it->first);
+    }
+
+    for (size_t i = 0; i < orphans.size(); ++i)
+    {
+        std::map<int, CgiProcess>::iterator it = this->cgi_processes.find(orphans[i]);
+
+        if (it == this->cgi_processes.end())
+            continue;
+
+        kill(it->second.pid, SIGKILL);
+        waitpid(it->second.pid, NULL, 0);
+        close_cgi(orphans[i]);
+    }
+
     if (this->epoll_fd != -1)
         epoll_ctl(this->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
 
@@ -210,12 +231,35 @@ void Server::check_cgi_timeouts()
     }
 }
 
+void Server::close_cgi_in(int in_fd)
+{
+    std::map<int, int>::iterator link = this->cgi_in_to_out.find(in_fd);
+
+    if (link == this->cgi_in_to_out.end())
+        return;
+
+    std::map<int, CgiProcess>::iterator it = this->cgi_processes.find(link->second);
+
+    if (it != this->cgi_processes.end())
+        it->second.in_fd = -1;
+
+    if (this->epoll_fd != -1)
+        epoll_ctl(this->epoll_fd, EPOLL_CTL_DEL, in_fd, NULL);
+
+    close(in_fd);
+
+    this->cgi_in_to_out.erase(link);
+}
+
 void Server::close_cgi(int cgi_fd)
 {
     std::map<int, CgiProcess>::iterator it = this->cgi_processes.find(cgi_fd);
 
     if (it == this->cgi_processes.end())
         return;
+
+    if (it->second.in_fd != -1)
+        close_cgi_in(it->second.in_fd);
 
     if (this->epoll_fd != -1)
         epoll_ctl(this->epoll_fd, EPOLL_CTL_DEL, cgi_fd, NULL);
@@ -288,6 +332,38 @@ bool Server::handle_cgi_read(int cgi_fd)
     return true;
 }
 
+bool Server::handle_cgi_write(int in_fd)
+{
+    std::map<int, int>::iterator link = this->cgi_in_to_out.find(in_fd);
+
+    if (link == this->cgi_in_to_out.end())
+        return false;
+
+    std::map<int, CgiProcess>::iterator it = this->cgi_processes.find(link->second);
+
+    if (it == this->cgi_processes.end())
+        return false;
+
+    CgiProcess &proc = it->second;
+
+    size_t left = proc.body.size() - proc.body_sent;
+
+    ssize_t written = write(in_fd, proc.body.c_str() + proc.body_sent, left);
+
+    if (written <= 0)
+    {
+        close_cgi_in(in_fd);
+        return true;
+    }
+
+    proc.body_sent += written;
+
+    if (proc.body_sent >= proc.body.size())
+        close_cgi_in(in_fd);
+
+    return true;
+}
+
 bool Server::handle_client_read(int client_fd)
 {
     std::map<int, Client>::iterator client_it = this->clients.find(client_fd);
@@ -337,11 +413,14 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    client.parse_request();
-
+    client.parse_request(config.client_max_body_size);
     if (client.req_error())
     {
-        if (!client.prepare_error_response(400, config))
+        int code = 400;
+        if (client.is_body_too_large())
+            code = 413;
+
+        if (!client.prepare_error_response(code, config))
             return false;
         if (DEBUG)
             client.print_response();
@@ -391,8 +470,21 @@ bool Server::handle_client_read(int client_fd)
             proc.client_fd = client_fd;
             proc.pid = client.get_cgi_pid();
             proc.start = time(NULL);
+            proc.in_fd = client.get_cgi_in_fd();
+            proc.body = client.get_body();
 
             this->cgi_processes[cgi_fd] = proc;
+
+            if (proc.in_fd != -1)
+            {
+                if (!add_epoll_fd(proc.in_fd, EPOLLOUT))
+                {
+                    close(proc.in_fd);
+                    this->cgi_processes[cgi_fd].in_fd = -1;
+                }
+                else
+                    this->cgi_in_to_out[proc.in_fd] = cgi_fd;
+            }
 
             return true;
         }
@@ -467,6 +559,9 @@ bool Server::run()
             std::map<int, CgiProcess>::iterator cgi_it = this->cgi_processes.find(current_fd);
             bool is_cgi_pipe = cgi_it != this->cgi_processes.end();
 
+            std::map<int, int>::iterator cgi_in_it = this->cgi_in_to_out.find(current_fd);
+            bool is_cgi_in_pipe = cgi_in_it != this->cgi_in_to_out.end();
+
             if (revents & (EPOLLERR | EPOLLHUP))
             {
                 if (is_listening_socket)
@@ -474,6 +569,12 @@ bool Server::run()
                     std::cerr << "Error: listening socket event failed" << std::endl;
                     close_all_clients();
                     return false;
+                }
+
+                if (is_cgi_in_pipe)
+                {
+                    close_cgi_in(current_fd);
+                    continue;
                 }
 
                 if (is_cgi_pipe)
@@ -532,6 +633,13 @@ bool Server::run()
                     close_client(current_fd);
                     continue;
                 }
+            }
+
+            if ((revents & EPOLLOUT) && is_cgi_in_pipe)
+            {
+                if (!handle_cgi_write(current_fd))
+                    close_cgi_in(current_fd);
+                continue;
             }
 
             if ((revents & EPOLLOUT) && !is_listening_socket)
