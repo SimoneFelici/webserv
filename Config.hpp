@@ -16,6 +16,7 @@ struct LocationConfig
     std::string root;
     std::string index;
     int autoindex;
+    size_t location_max_body_size;
     std::vector<std::string> allowed_methods;
     std::map<int, std::string> error_pages;
     int redirect_code;
@@ -67,6 +68,7 @@ class Config
     bool parseUploadPath(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location);
     bool parseCgi(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location);
     bool parseLocation(const std::vector<std::string> &tokens, size_t &i, ServerConfig &server);
+    bool parseLocationMaxBodySize(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location);
     bool parseAutoindex(const std::vector<std::string> &tokens, size_t &i, int &autoindex);
     bool validateConfig() const;
 

@@ -75,7 +75,7 @@ void Client::print_request() const
 void Client::print_response() const
 {
     std::cout << "\n--- RESPONSE ---" << std::endl;
-//    std::cout << this->response_buffer << std::endl;
+    //    std::cout << this->response_buffer << std::endl;
     std::cout << "---------" << std::endl;
 }
 
@@ -307,6 +307,13 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
         }
         long content_length = std::atol(cl.c_str());
 
+        if (static_cast<size_t>(content_length) > max_body_size)
+        {
+            this->body_too_large = true;
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
+
         size_t available = this->request_buffer.size() - pos;
         if (available < static_cast<size_t>(content_length))
             return true;
@@ -317,7 +324,7 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
     return true;
 }
 
-bool Client::parse_request(std::size_t max_body_size)
+bool Client::parse_request(const ServerConfig &config)
 {
     std::size_t pos = 0;
     if (req.state == HttpRequest::PARSING_BODY)
@@ -336,7 +343,14 @@ bool Client::parse_request(std::size_t max_body_size)
                 return false;
             break;
         case HttpRequest::PARSING_BODY:
-            return parse_body(pos, max_body_size);
+        {
+            const LocationConfig *loc = match_location(config);
+
+            if (loc)
+                return parse_body(pos, loc->location_max_body_size);
+
+            return parse_body(pos, config.client_max_body_size);
+        }
         case HttpRequest::DONE:
             return true;
         case HttpRequest::ERROR:
@@ -1365,6 +1379,7 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     if (status != 0)
         return status;
 
+    // Troviamo la location associata al path della request
     loc = match_location(config);
 
     const std::vector<std::string> *allowed;
@@ -1401,8 +1416,14 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
         if (content_length < 0)
             return 400;
 
-        if (static_cast<size_t>(content_length) >
-            config.client_max_body_size)
+        size_t max_body_size;
+
+        if (loc)
+            max_body_size = loc->location_max_body_size;
+        else
+            max_body_size = config.client_max_body_size;
+
+        if (static_cast<size_t>(content_length) > max_body_size)
             return 413;
     }
 

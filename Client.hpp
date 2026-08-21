@@ -41,7 +41,7 @@ class Client
     // TODO: USE AFTER SENDING THE RESPONSE
     void clear_request();
 
-    bool parse_request(std::size_t max_body_size);
+    bool parse_request(const ServerConfig &config);
     bool req_done() const;
     bool req_error() const;
     bool prepare_error_response(int error_code, const ServerConfig &config);

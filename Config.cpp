@@ -5,7 +5,7 @@ static const char *DEFAULT_ROOT = "./www";
 static const char *DEFAULT_INDEX = "index.html";
 static const size_t DEFAULT_CLIENT_MAX_BODY_SIZE = 1000000;
 
-LocationConfig::LocationConfig() : autoindex(-1), redirect_code(0)
+LocationConfig::LocationConfig() : autoindex(-1), location_max_body_size(0), redirect_code(0)
 {
 }
 
@@ -52,6 +52,7 @@ void Config::printConfig() const
             std::cout << "  root: " << location.root << std::endl;
             std::cout << "  index: " << location.index << std::endl;
             std::cout << "  autoindex: " << location.autoindex << std::endl;
+            std::cout << "  max body size location: " << location.location_max_body_size << std::endl;
             std::cout << "  allowed_methods:";
             for (size_t k = 0; k < location.allowed_methods.size(); ++k)
                 std::cout << " " << location.allowed_methods[k];
@@ -597,6 +598,54 @@ bool Config::parseUploadPath(const std::vector<std::string> &tokens, size_t &i, 
     ++i;
     return true;
 }
+bool Config::parseLocationMaxBodySize(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location)
+{
+    if (i >= tokens.size() || tokens[i] != "client_max_body_size")
+    {
+        std::cerr << "Error: expected 'client_max_body_size'" << std::endl;
+        return false;
+    }
+
+    if (location.location_max_body_size != 0)
+    {
+        std::cerr << "Error: duplicate client_max_body_size directive in location" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    if (!hasValidValue(tokens, i, "client_max_body_size"))
+        return false;
+
+    const std::string value = tokens[i];
+    long size;
+
+    if (!string_to_long(value, size))
+    {
+        std::cerr << "Error: invalid or too large client_max_body_size value '" << value << "'" << std::endl;
+        return false;
+    }
+
+    if (size <= 0)
+    {
+        std::cerr << "Error: client_max_body_size must be greater than 0" << std::endl;
+        return false;
+    }
+
+    location.location_max_body_size = size;
+
+    ++i;
+
+    if (i >= tokens.size() || tokens[i] != ";")
+    {
+        std::cerr << "Error: expected ';' after client_max_body_size" << std::endl;
+        return false;
+    }
+
+    ++i;
+
+    return true;
+}
 
 bool Config::parseCgi(const std::vector<std::string> &tokens, size_t &i, LocationConfig &location)
 {
@@ -706,6 +755,11 @@ bool Config::parseLocation(const std::vector<std::string> &tokens, size_t &i, Se
         else if (tokens[i] == "return")
         {
             if (!parseRedirect(tokens, i, location))
+                return false;
+        }
+        else if (tokens[i] == "client_max_body_size")
+        {
+            if (!parseLocationMaxBodySize(tokens, i, location))
                 return false;
         }
         else if (tokens[i] == "upload_path" || tokens[i] == "upload")
@@ -847,6 +901,13 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
 
     if (server.client_max_body_size == 0)
         server.client_max_body_size = DEFAULT_CLIENT_MAX_BODY_SIZE;
+    
+    // Controlla la max size bbody delle route sennò assegno quella del server
+    for (size_t j = 0; j < server.locations.size(); ++j)
+    {
+        if (server.locations[j].location_max_body_size == 0)
+            server.locations[j].location_max_body_size = server.client_max_body_size;
+    }
 
     /* controllo duplicati address:port */
     for (size_t j = 0; j < configs.size(); ++j)
