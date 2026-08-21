@@ -12,7 +12,7 @@
 #define MAX_EPOLL_EVENTS 1024
 
 #include <ctime>
-#define DEBUG 1
+#define DEBUG 0
 
 struct CgiProcess
 {
@@ -58,6 +58,7 @@ class Server
     void close_cgi(int cgi_fd);
     void close_cgi_in(int in_fd);
     void check_cgi_timeouts();
+    void check_client_timeouts();
 
     // Tutte le configurazioni lette dai blocchi "server" del file .conf.
     std::vector<ServerConfig> configs;

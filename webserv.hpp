@@ -18,6 +18,7 @@
 // TODO: MAYBE ADD TO CONF
 #define CGI_TIMEOUT 5
 #define EPOLL_TIMEOUT_MS 500
+#define CLIENT_TIMEOUT 20
 
 bool set_nonblocking(int fd);
 int read_file(const std::string &file_path, std::string &body);

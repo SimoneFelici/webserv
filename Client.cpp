@@ -2,12 +2,13 @@
 #include "Config.hpp"
 #include "Server.hpp"
 #include "webserv.hpp"
+#include <cstdio>
 #include <iostream>
 #include <unistd.h>
 
-Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
+Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1), last_activity(time(NULL)) {}
 
-Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1) {}
+Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1), last_activity(time(NULL)) {}
 
 // il distruttore per ora non chiude il fd.
 Client::~Client() {}
@@ -42,6 +43,16 @@ const std::string &Client::get_query_string() const
     return this->req.query_string;
 }
 
+time_t Client::get_last_activity() const
+{
+    return this->last_activity;
+}
+
+void Client::update_last_activity()
+{
+    this->last_activity = time(NULL);
+}
+
 bool Client::prepare_error_response(int error_code, const ServerConfig &config)
 {
     if (!this->clear_response())
@@ -66,15 +77,15 @@ void Client::print_request() const
     std::cout << "Version: " << req.version << std::endl;
     for (std::map<std::string, std::string>::const_iterator it = req.headers.begin(); it != req.headers.end(); ++it)
         std::cout << it->first << ": " << it->second << std::endl;
-    if (!req.body.empty())
-        std::cout << "Body: " << req.body << std::endl;
+    // if (!req.body.empty())
+    //     std::cout << "Body: " << req.body << std::endl;
     std::cout << "---------" << std::endl;
 }
 
 void Client::print_response() const
 {
     std::cout << "\n--- RESPONSE ---" << std::endl;
-    std::cout << this->response_buffer << std::endl;
+    //    std::cout << this->response_buffer << std::endl;
     std::cout << "---------" << std::endl;
 }
 
@@ -305,7 +316,13 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
             }
         }
         long content_length = std::atol(cl.c_str());
-        // TODO: when parsing client_max_body_size add check
+
+        if (static_cast<size_t>(content_length) > max_body_size)
+        {
+            this->body_too_large = true;
+            req.state = HttpRequest::ERROR;
+            return true;
+        }
 
         size_t available = this->request_buffer.size() - pos;
         if (available < static_cast<size_t>(content_length))
@@ -317,7 +334,7 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
     return true;
 }
 
-bool Client::parse_request(std::size_t max_body_size)
+bool Client::parse_request(const ServerConfig &config)
 {
     std::size_t pos = 0;
     if (req.state == HttpRequest::PARSING_BODY)
@@ -336,7 +353,14 @@ bool Client::parse_request(std::size_t max_body_size)
                 return false;
             break;
         case HttpRequest::PARSING_BODY:
-            return parse_body(pos, max_body_size);
+        {
+            const LocationConfig *loc = match_location(config);
+
+            if (loc)
+                return parse_body(pos, loc->location_max_body_size);
+
+            return parse_body(pos, config.client_max_body_size);
+        }
         case HttpRequest::DONE:
             return true;
         case HttpRequest::ERROR:
@@ -1239,6 +1263,53 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
     return true;
 }
 
+bool Client::handle_delete_req(ServerConfig &config, const LocationConfig *loc)
+{
+    std::string file_path; // dove salveremo il percorso del file vero sul disco
+    struct stat file_stat; // creiamo una variabile di tipo struct stat
+
+    file_path = build_file_path(config, loc); // la scheda con le informazioni del file, stat() è la funzione che prende il path e riempie quella scheda.
+
+    if (stat(file_path.c_str(), &file_stat) == -1)
+    {
+        if (errno == EACCES)
+            build_error_response(403, config, loc);
+        else if (errno == ENOENT || errno == ENOTDIR)
+            build_error_response(404, config, loc);
+        else
+            build_error_response(500, config, loc);
+
+        return true;
+    }
+
+    // Non permetto alla DELETE di cancellare directory
+    if (!S_ISREG(file_stat.st_mode))
+    {
+        build_error_response(403, config, loc);
+        return true;
+    }
+
+    if (std::remove(file_path.c_str()) != 0)
+    {
+        if (errno == EACCES || errno == EPERM)
+            build_error_response(403, config, loc);
+        else if (errno == ENOENT || errno == ENOTDIR)
+            build_error_response(404, config, loc);
+        else
+            build_error_response(500, config, loc);
+
+        return true;
+    }
+
+    // 204 No Content significa richiesta eseguita correttamente, ma non c'è body da restituire.
+    this->res.status_code = 204;
+    this->res.reason = "No Content";
+    this->res.content_type.clear();
+    this->res.body.clear();
+
+    return true;
+}
+
 const LocationConfig *Client::match_location(const ServerConfig &config) const
 {
     const LocationConfig *best = NULL;
@@ -1318,6 +1389,7 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     if (status != 0)
         return status;
 
+    // Troviamo la location associata al path della request
     loc = match_location(config);
 
     const std::vector<std::string> *allowed;
@@ -1354,8 +1426,14 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
         if (content_length < 0)
             return 400;
 
-        if (static_cast<size_t>(content_length) >
-            config.client_max_body_size)
+        size_t max_body_size;
+
+        if (loc)
+            max_body_size = loc->location_max_body_size;
+        else
+            max_body_size = config.client_max_body_size;
+
+        if (static_cast<size_t>(content_length) > max_body_size)
             return 413;
     }
 
@@ -1710,8 +1788,8 @@ bool Client::prepare_response(ServerConfig &config)
         handle_get_req(config, loc);
     else if (this->get_method() == "POST")
         handle_post_req(config, loc);
-    // else if (this->get_method() == "DELETE")
-    //     handle_delete(config);
+    else if (this->get_method() == "DELETE")
+        handle_delete_req(config, loc);
     else
         build_error_response(501, config, loc);
 

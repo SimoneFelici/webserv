@@ -11,6 +11,9 @@ The source of truth is `conf/complete_webserv.conf`. Start Webserv from the repo
 | Raw upload | `/upload/name.txt` | POST | 201 |
 | Multipart upload | `/upload` | POST | 201 |
 | Upload listing | `/uploads/` | GET | 200 |
+| Delete uploaded file | `/uploads/name.txt` | DELETE | 204 |
+| Delete missing file | `/uploads/missing-file.txt` | DELETE | 404 |
+| Delete directory | `/uploads/` | DELETE | 403 |
 | Redirect | `/old` | GET | 301 to `/` |
 | Method restriction | `/` | POST | 405 |
 | Oversize body | `/upload/oversize-probe.txt` | POST | 413 above 1,000,000 bytes |
@@ -21,6 +24,6 @@ The source of truth is `conf/complete_webserv.conf`. Start Webserv from the repo
 
 ## Known implementation limits
 
-- DELETE is accepted by configuration parsing but its C++ handler is currently commented out.
+- DELETE is enabled on `/uploads`. The browser tester targets one exact filename and reports the real response.
 - Query-string separation is still pending, so the CGI dashboard deliberately uses a path without a query.
 - The configuration declares custom pages for 400, 403, 404, 405, 413, 500, 501, and 505; all are present under `www/errors/`.

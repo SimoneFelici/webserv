@@ -1,5 +1,5 @@
-#include "Config.hpp"
 #include "Server.hpp"
+#include "Config.hpp"
 #include "webserv.hpp"
 
 Server::Server() : running(false), epoll_fd(-1)
@@ -184,6 +184,30 @@ void Server::close_all_clients()
     {
         close_client(this->clients.begin()->first);
     }
+}
+
+void Server::check_client_timeouts()
+{
+    time_t now = time(NULL);
+    std::vector<int> expired;
+
+    for (std::map<int, Client>::iterator it = this->clients.begin();
+         it != this->clients.end(); ++it)
+    {
+        if (!it->second.req_done() && !it->second.req_error() && now - it->second.get_last_activity() >= CLIENT_TIMEOUT)
+            expired.push_back(it->first);
+    }
+
+    // DEBUG
+    for (size_t i = 0; i < expired.size(); ++i)
+    {
+        std::cout << "Client timeout, closing fd: "
+                  << expired[i] << std::endl;
+
+        close_client(expired[i]);
+    }
+    for (size_t i = 0; i < expired.size(); ++i)
+        close_client(expired[i]);
 }
 
 void Server::check_cgi_timeouts()
@@ -398,6 +422,8 @@ bool Server::handle_client_read(int client_fd)
         return false;
     }
 
+    client.update_last_activity();
+
     if (!client.has_full_headers(temp, bytes_read))
     {
         if (client.is_headers_too_large())
@@ -413,7 +439,7 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    client.parse_request(config.client_max_body_size);
+    client.parse_request(config);
     if (client.req_error())
     {
         int code = 400;
@@ -429,20 +455,20 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    if (!client.req_done())
-    {
-        std::string cl = client.get_header("content-length");
-        long content_length;
+    // if (!client.req_done())
+    // {
+    //     std::string cl = client.get_header("content-length");
+    //     long content_length;
 
-        if (!cl.empty() && string_to_long(cl, content_length) && static_cast<size_t>(content_length) > config.client_max_body_size)
-        {
-            if (!client.prepare_error_response(413, config))
-                return false;
-            if (!modify_epoll_fd(client_fd, EPOLLOUT))
-                return false;
-            return true;
-        }
-    }
+    //     if (!cl.empty() && string_to_long(cl, content_length) && static_cast<size_t>(content_length) > config.client_max_body_size)
+    //     {
+    //         if (!client.prepare_error_response(413, config))
+    //             return false;
+    //         if (!modify_epoll_fd(client_fd, EPOLLOUT))
+    //             return false;
+    //         return true;
+    //     }
+    // }
 
     if (client.req_done())
     {
@@ -498,54 +524,6 @@ bool Server::handle_client_read(int client_fd)
 
     return true;
 }
-
-// bool Server::handle_client_read(int client_fd)
-// {
-//     std::map<int, Client>::iterator it = this->clients.find(client_fd);
-//     if (it == this->clients.end())
-//         return false;
-
-//     Client &client = it->second; // client è un riferimento al Client dentro la map, quindi quando fai append modifichi davvero quel client.
-//     char temp[SOCKET_BUFFER_SIZE];
-
-//     ssize_t bytes_read = recv(client_fd, temp, sizeof(temp), 0);
-
-//     if (bytes_read <= 0)
-//     {
-//         std::cout << "recv failed and/or Client disconnected: " << client_fd << std::endl;
-//         return false;
-//     }
-
-//     if (!client.has_full_headers(temp, bytes_read))
-//         return true;
-
-//     client.parse_request();
-
-//     if (client.req_error())
-//     {
-//         if (!client.prepare_error_response(400, this->config))
-//             return false;
-//         if (DEBUG)
-//             client.print_response();
-//         if (!modify_epoll_fd(client_fd, EPOLLOUT))
-//             return false;
-//         return true;
-//     }
-
-//     if (client.req_done())
-//     {
-//         if (DEBUG)
-//             client.print_request();
-//         if (!client.prepare_response(this->config))
-//             return false;
-//         if (DEBUG)
-//             client.print_response();
-//         if (!modify_epoll_fd(client_fd, EPOLLOUT))
-//             return false;
-//     }
-
-//     return true;
-// }
 
 bool Server::handle_client_write(int client_fd)
 {
@@ -699,91 +677,13 @@ bool Server::run()
                 }
             }
         }
+        check_client_timeouts();
     }
 
     close_all_clients();
     return true;
 }
 
-// bool Server::run()
-// {
-//     int client_fd;
-
-//     this->running = true;
-//     epoll_event events[MAX_EPOLL_EVENTS];
-
-//     // DEBUG: remove after testing
-//     // time_t start = time(NULL);
-//     while (this->running)
-//     {
-//         // DEBUG: stoppo il server dopo 5 secondi per non doverlo killare ogni volta.
-//         // if ((DEBUG) && (time(NULL) - start >= 5))
-//         //     this->running = false;
-
-//         int ready = epoll_wait(this->epoll_fd, events, MAX_EPOLL_EVENTS, -1);
-//         if (ready == -1)
-//         {
-//             if (errno == EINTR)
-//                 continue;
-//             std::cerr << "Error: epoll_wait failed: " << strerror(errno) << std::endl;
-//             close_all_clients();
-//             return false;
-//         }
-//         for (int i = 0; i < ready; ++i)
-//         {
-//             int current_fd = events[i].data.fd;
-//             if (current_fd == this->fd && (revents & (EPOLLERR | EPOLLHUP)))
-//             {
-//                 std::cerr << "Error: server socket epoll event failed" << std::endl;
-//                 close_all_clients();
-//                 return false;
-//             }
-//             if (current_fd != this->fd && (revents & (EPOLLERR | EPOLLHUP)))
-//             {
-//                 close_client(current_fd);
-//                 continue;
-//             }
-//             if (revents & EPOLLIN)
-//             {
-//                 if (current_fd == this->fd)
-//                 {
-//                     client_fd = accept(this->fd, NULL, NULL);
-//                     if (client_fd == -1)
-//                     {
-//                         std::cerr << "Error: accept failed: " << strerror(errno) << std::endl;
-//                         continue;
-//                     }
-//                     if (!accept_client(client_fd))
-//                     {
-//                         close(client_fd);
-//                         continue;
-//                     }
-//                     std::cout << "Client connected, fd: " << client_fd << "\n";
-//                 }
-//                 else
-//                 {
-//                     if (!handle_client_read(current_fd)) // DA IMPLEMENTARE
-//                     {
-//                         close_client(current_fd);
-//                         continue;
-//                     }
-//                 }
-//             }
-//
-//             if (revents & EPOLLOUT)
-//             {
-//                 if (current_fd != this->fd)
-//                 {
-//                     if (!handle_client_write(current_fd))
-//                         close_client(current_fd);
-//                     continue;
-//                 }
-//             }
-//         }
-//     }
-//     close_all_clients();
-//     return true;
-// }
 bool Server::setup(const std::vector<ServerConfig> &parsed_configs)
 {
     if (parsed_configs.empty())

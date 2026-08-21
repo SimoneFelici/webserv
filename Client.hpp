@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
+#include <ctime>
 
 struct ServerConfig;
 struct LocationConfig;
@@ -41,7 +42,7 @@ class Client
     // TODO: USE AFTER SENDING THE RESPONSE
     void clear_request();
 
-    bool parse_request(std::size_t max_body_size);
+    bool parse_request(const ServerConfig &config);
     bool req_done() const;
     bool req_error() const;
     bool prepare_error_response(int error_code, const ServerConfig &config);
@@ -55,6 +56,8 @@ class Client
     bool is_headers_too_large() const;
     bool is_body_too_large() const;
     const std::string &get_query_string() const;
+    time_t get_last_activity() const;
+    void update_last_activity();
 
     // Response
     bool clear_response();
@@ -66,6 +69,7 @@ class Client
     // Methods
     bool handle_get_req(ServerConfig &config, const LocationConfig *loc);
     bool handle_post_req(ServerConfig &config, const LocationConfig *loc);
+    bool handle_delete_req(ServerConfig &config, const LocationConfig *loc);
 
     // CGI
     bool parse_cgi_output(const std::string &output);
@@ -129,6 +133,8 @@ class Client
     int cgi_fd;
     int cgi_in_fd;
     pid_t cgi_pid;
+
+    time_t last_activity;
 
     std::string get_error_reason(int error_code) const;
 
