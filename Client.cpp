@@ -694,7 +694,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
                 if (loc && loc->autoindex != -1)
                     autoindex_value = loc->autoindex;
                 if (autoindex_value != 1) // Se autoindex è off 403
-                    build_error_response(403, config, loc);
+                    build_error_response(404, config, loc);
                 else
                 {
                     // Se autoindex è on, genera il body HTML della directory listing.
