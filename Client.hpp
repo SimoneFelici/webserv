@@ -69,7 +69,7 @@ class Client
 
     // CGI
     bool parse_cgi_output(const std::string &output);
-    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &interpreter);
+    bool exec_cgi(const std::string &script_path, const std::string &script_name, const std::string &path_info, const std::string &interpreter);
     int get_cgi_fd() const;
     int get_cgi_in_fd() const;
     pid_t get_cgi_pid() const;
@@ -147,6 +147,7 @@ class Client
     int sanitize_path();
     int validate_req(ServerConfig &config, const LocationConfig *&loc);
     std::string build_file_path(const ServerConfig &config, const LocationConfig *loc) const;
+    std::string build_file_path(const ServerConfig &config, const LocationConfig *loc, const std::string &url_path) const;
 
     // POST funzioni multipart
     int write_uploaded_file(const std::string &file_path, const std::string &data);
@@ -156,5 +157,5 @@ class Client
     int handle_raw_upload(const LocationConfig *loc);
     int handle_multipart_upload(const LocationConfig *loc, const std::string &content_type);
 
-    bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &interpreter) const;
+    bool split_cgi_path(const LocationConfig *loc, std::string &script_name, std::string &path_info, std::string &interpreter) const;
 };
