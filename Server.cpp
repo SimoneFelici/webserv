@@ -198,16 +198,13 @@ void Server::check_client_timeouts()
             expired.push_back(it->first);
     }
 
-    // DEBUG
     for (size_t i = 0; i < expired.size(); ++i)
     {
-        std::cout << "Client timeout, closing fd: "
-                  << expired[i] << std::endl;
+        // DEBUG
+        std::cout << "Client timeout, closing fd: " << expired[i] << std::endl;
 
-        close_client(expired[i]);
+        close_client(expired[i]); // NON DEBUG
     }
-    for (size_t i = 0; i < expired.size(); ++i)
-        close_client(expired[i]);
 }
 
 void Server::check_cgi_timeouts()
