@@ -239,52 +239,87 @@ bool hex_to_size(const std::string &s, size_t &result)
 
 bool Client::parse_chunked_body(std::size_t pos, std::size_t max_body_size)
 {
-    std::string body;
+    if (req.chunk_pos == 0)
+        req.chunk_pos = pos;
+
+    if (DEBUG)
+        std::cout << "chunked: chunk_pos=" << req.chunk_pos
+                  << " buf=" << this->request_buffer.size()
+                  << " body=" << req.body.size()
+                  << " rem=" << req.chunk_remaining
+                  << " size_read=" << req.chunk_size_read
+                  << " max=" << max_body_size << std::endl;
 
     while (true)
     {
-        size_t line_end = this->request_buffer.find("\r\n", pos);
+        if (!req.chunk_size_read)
+        {
+            size_t line_end = this->request_buffer.find("\r\n", req.chunk_pos);
 
-        if (line_end == std::string::npos)
+            if (line_end == std::string::npos)
+                return true;
+
+            size_t chunk_size;
+
+            if (!hex_to_size(this->request_buffer.substr(req.chunk_pos, line_end - req.chunk_pos), chunk_size))
+            {
+                if (DEBUG)
+                    std::cout << "chunked: hex non valido" << std::endl;
+                req.state = HttpRequest::ERROR;
+                return true;
+            }
+
+            req.chunk_pos = line_end + 2;
+
+            if (chunk_size == 0)
+            {
+                req.state = HttpRequest::DONE;
+                return true;
+            }
+
+            if (req.body.size() + chunk_size > max_body_size)
+            {
+                if (DEBUG)
+                    std::cout << "chunked: limite superato "
+                              << req.body.size() + chunk_size << " > " << max_body_size << std::endl;
+                this->body_too_large = true;
+                req.state = HttpRequest::ERROR;
+                return true;
+            }
+
+            req.chunk_remaining = chunk_size;
+            req.chunk_size_read = true;
+        }
+
+        size_t available = this->request_buffer.size() - req.chunk_pos;
+
+        if (available > req.chunk_remaining)
+            available = req.chunk_remaining;
+
+        if (available > 0)
+        {
+            req.body.append(this->request_buffer, req.chunk_pos, available);
+            req.chunk_pos += available;
+            req.chunk_remaining -= available;
+        }
+
+        if (req.chunk_remaining > 0)
             return true;
 
-        size_t chunk_size;
+        if (this->request_buffer.size() < req.chunk_pos + 2)
+            return true;
 
-        if (!hex_to_size(this->request_buffer.substr(pos, line_end - pos), chunk_size))
+        if (this->request_buffer[req.chunk_pos] != '\r' ||
+            this->request_buffer[req.chunk_pos + 1] != '\n')
         {
+            if (DEBUG)
+                std::cout << "chunked: CRLF mancante a " << req.chunk_pos << std::endl;
             req.state = HttpRequest::ERROR;
             return true;
         }
 
-        pos = line_end + 2;
-
-        if (chunk_size == 0)
-        {
-            req.body = body;
-            req.state = HttpRequest::DONE;
-            return true;
-        }
-
-        // No content-len:
-        if (body.size() + chunk_size > max_body_size)
-        {
-            this->body_too_large = true;
-            req.state = HttpRequest::ERROR;
-            return true;
-        }
-
-        if (this->request_buffer.size() < pos + chunk_size + 2)
-            return true;
-
-        if (this->request_buffer[pos + chunk_size] != '\r' ||
-            this->request_buffer[pos + chunk_size + 1] != '\n')
-        {
-            req.state = HttpRequest::ERROR;
-            return true;
-        }
-
-        body.append(this->request_buffer, pos, chunk_size);
-        pos += chunk_size + 2;
+        req.chunk_pos += 2;
+        req.chunk_size_read = false;
     }
 }
 
@@ -1639,6 +1674,27 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     env.push_back("CONTENT_LENGTH=" + c_len.str());
     env.push_back("CONTENT_TYPE=" + this->get_header("content-type"));
     env.push_back("REDIRECT_STATUS=200");
+    /* Lo standard CGI vuole ogni header della richiesta nell'ambiente come
+   HTTP_<NOME>, in maiuscolo e con i trattini sostituiti da underscore. */
+    for (std::map<std::string, std::string>::const_iterator it = this->req.headers.begin();
+         it != this->req.headers.end(); ++it)
+    {
+        std::string name = it->first;
+
+        for (size_t i = 0; i < name.size(); ++i)
+        {
+            if (name[i] == '-')
+                name[i] = '_';
+            else
+                name[i] = static_cast<char>(toupper(static_cast<unsigned char>(name[i])));
+        }
+
+        /* Questi due hanno gia' una variabile dedicata senza prefisso. */
+        if (name == "CONTENT_LENGTH" || name == "CONTENT_TYPE")
+            continue;
+
+        env.push_back("HTTP_" + name + "=" + it->second);
+    }
     std::vector<char *> envp;
     for (size_t i = 0; i < env.size(); ++i)
         envp.push_back(const_cast<char *>(env[i].c_str()));
@@ -1749,24 +1805,6 @@ bool Client::prepare_response(ServerConfig &config)
     if (split_cgi_path(loc, script_name, path_info, interpreter))
     {
         std::string script_path = build_file_path(config, loc, script_name);
-        struct stat script_stat;
-
-        if (stat(script_path.c_str(), &script_stat) == -1)
-        {
-            if (errno == EACCES)
-                build_error_response(403, config, loc);
-            else
-                build_error_response(404, config, loc);
-            build_response_buffer();
-            return true;
-        }
-
-        if (!S_ISREG(script_stat.st_mode))
-        {
-            build_error_response(403, config, loc);
-            build_response_buffer();
-            return true;
-        }
 
         std::string cgi_path_info = script_name + path_info;
 

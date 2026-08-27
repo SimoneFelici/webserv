@@ -2,6 +2,7 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <ctime>
 #include <dirent.h> // ??
 #include <iostream>
 #include <map>
@@ -11,7 +12,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
-#include <ctime>
 
 struct ServerConfig;
 struct LocationConfig;
@@ -101,8 +101,12 @@ class Client
         std::string body;
         std::size_t body_start;
         std::string query_string;
+        std::size_t chunk_pos;
+        std::size_t chunk_remaining;
+        bool chunk_size_read;
 
-        HttpRequest() : state(PARSING_REQUEST_LINE), body_start(0) {}
+        HttpRequest() : state(PARSING_REQUEST_LINE), body_start(0),
+                        chunk_pos(0), chunk_remaining(0), chunk_size_read(false) {}
     };
 
     struct HttpResponse

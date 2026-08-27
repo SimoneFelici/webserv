@@ -16,9 +16,9 @@
 #define MAX_HEADER_SIZE (8 * 1024)
 
 // TODO: MAYBE ADD TO CONF
-#define CGI_TIMEOUT 5
+#define CGI_TIMEOUT 60
 #define EPOLL_TIMEOUT_MS 500
-#define CLIENT_TIMEOUT 20
+#define CLIENT_TIMEOUT 120
 
 bool set_nonblocking(int fd);
 int read_file(const std::string &file_path, std::string &body);
