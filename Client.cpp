@@ -242,14 +242,6 @@ bool Client::parse_chunked_body(std::size_t pos, std::size_t max_body_size)
     if (req.chunk_pos == 0)
         req.chunk_pos = pos;
 
-    if (DEBUG)
-        std::cout << "chunked: chunk_pos=" << req.chunk_pos
-                  << " buf=" << this->request_buffer.size()
-                  << " body=" << req.body.size()
-                  << " rem=" << req.chunk_remaining
-                  << " size_read=" << req.chunk_size_read
-                  << " max=" << max_body_size << std::endl;
-
     while (true)
     {
         if (!req.chunk_size_read)
@@ -1172,7 +1164,17 @@ int Client::handle_raw_upload(const LocationConfig *loc)
     if (!file_name.empty() && file_name[0] == '/')
         file_name.erase(0, 1);
 
-    if (file_name.empty() || file_name == "." || file_name == ".." || file_name.find('/') != std::string::npos || file_name.find('\\') != std::string::npos)
+    if (file_name.empty())
+    {
+        std::stringstream ss;
+
+        ss << "upload_" << time(NULL) << "_" << this->client_fd;
+        file_name = ss.str();
+    }
+
+    if (file_name == "." || file_name == ".." ||
+        file_name.find('/') != std::string::npos ||
+        file_name.find('\\') != std::string::npos)
         return 400;
 
     std::string file_path = loc->upload_path;
@@ -1181,6 +1183,7 @@ int Client::handle_raw_upload(const LocationConfig *loc)
         file_path += "/";
 
     file_path += file_name;
+
     return write_uploaded_file(file_path, this->req.body);
 }
 
@@ -1245,12 +1248,6 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
         return true;
     }
 
-    if (this->req.body.empty()) // Controlla che ci sia un body
-    {
-        build_error_response(400, config, loc);
-        return true;
-    }
-
     struct stat upload_stat;
 
     if (stat(loc->upload_path.c_str(), &upload_stat) == -1) // Questo path esiste? E che tipo di elemento è?
@@ -1277,6 +1274,15 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 
     std::string lower_content_type = content_type;
     to_lower(lower_content_type);
+    if (this->req.body.empty())
+    {
+        this->res.status_code = 200;
+        this->res.reason = "OK";
+        this->res.content_type = "text/plain";
+        this->res.body = "";
+        return true;
+    }
+
     int upload_status;
     // Gestione multipart
     if (lower_content_type.find("multipart/form-data") != std::string::npos)
