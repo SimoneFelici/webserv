@@ -50,7 +50,7 @@ curl -i -X POST \
 curl -i -X POST \
   -H "Content-Type: plain/text" \
   --data "questo-body-supera-dieci-byte" \
-  http://127.0.0.1:8081/upload/long.txt
+  http://127.0.0.1:8081/upload/long2.txt
 
 BODY DA 101:
 curl -i -X POST -H "Content-Type: plain/text" --data "$(python3 -c 'print("A"*101, end="")')" http://127.0.0.1:8081/upload/body101.txt
@@ -80,6 +80,9 @@ TEST:
 telnet 127.0.0.1 8081
 
 GET /questo-non-esiste HTTP/1.1
+Host: localhost
+
+GET / HTTP/1.1
 Host: localhost
 
 ---
