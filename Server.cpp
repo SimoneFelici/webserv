@@ -1,5 +1,5 @@
-#include "Server.hpp"
 #include "Config.hpp"
+#include "Server.hpp"
 #include "webserv.hpp"
 
 Server::Server() : running(false), epoll_fd(-1)
@@ -198,16 +198,13 @@ void Server::check_client_timeouts()
             expired.push_back(it->first);
     }
 
-    // DEBUG
     for (size_t i = 0; i < expired.size(); ++i)
     {
-        std::cout << "Client timeout, closing fd: "
-                  << expired[i] << std::endl;
+        // DEBUG
+        std::cout << "Client timeout, closing fd: " << expired[i] << std::endl;
 
-        close_client(expired[i]);
+        close_client(expired[i]); // NON DEBUG
     }
-    for (size_t i = 0; i < expired.size(); ++i)
-        close_client(expired[i]);
 }
 
 void Server::check_cgi_timeouts()
@@ -440,9 +437,11 @@ bool Server::handle_client_read(int client_fd)
     }
 
     client.parse_request(config);
+
     if (client.req_error())
     {
         int code = 400;
+
         if (client.is_body_too_large())
             code = 413;
 
@@ -455,22 +454,11 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    // if (!client.req_done())
-    // {
-    //     std::string cl = client.get_header("content-length");
-    //     long content_length;
-
-    //     if (!cl.empty() && string_to_long(cl, content_length) && static_cast<size_t>(content_length) > config.client_max_body_size)
-    //     {
-    //         if (!client.prepare_error_response(413, config))
-    //             return false;
-    //         if (!modify_epoll_fd(client_fd, EPOLLOUT))
-    //             return false;
-    //         return true;
-    //     }
-    // }
-
-    if (client.req_done())
+    /* I byte in coda alla richiesta (l'ultimo CRLF del chunked, per esempio)
+       arrivano dopo che la risposta e' gia' stata avviata: vanno letti dal
+       socket, altrimenti alla chiusura il kernel manderebbe un RST, ma non
+       devono far ripartire prepare_response ne' forkare una seconda CGI. */
+    if (client.req_done() && client.get_response().empty() && client.get_cgi_fd() == -1)
     {
         if (DEBUG)
             client.print_request();
