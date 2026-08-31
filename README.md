@@ -671,12 +671,29 @@ It also reflects one of the central goals of the project: understanding how a we
 
 ## CGI
 
-DA RIVEDERE
-The server supports CGI execution based on file extensions configured
-in the server configuration.
+Webserv supports CGI (Common Gateway Interface) execution for resources
+whose file extension is associated with a CGI interpreter in the server
+configuration.
 
-CGI processes receive request information through environment variables
-and request bodies through standard input.
+For example:
+
+```conf
+location /cgi-bin {
+    root ./www/cgi-bin;
+    allowed_methods GET POST;
+    cgi .py /usr/bin/python3;
+}
+```
+
+When a request targets a CGI resource, Webserv prepares the information required by the CGI program from the HTTP request.
+Request information is passed through CGI environment variables, including data such as the request method, query string, content type and content length when applicable.  
+For requests containing a body, such as POST requests, the request body is provided to the CGI process through its standard input.  
+If the incoming HTTP request uses chunked transfer encoding, Webserv decodes the chunked body before passing it to the CGI program. The CGI therefore receives the actual request body rather than the HTTP chunk
+framing.
+The output produced by the CGI program is read by Webserv and used to
+construct the HTTP response returned to the client.
+When no explicit content length is provided by the CGI output, the end of the CGI output is determined by EOF.
+CGI programs are executed from the appropriate directory so that relative file paths used by the script can be resolved correctly.
 
 ---
 ## Resources
@@ -698,6 +715,22 @@ The following resources were consulted during the development of Webserv to bett
 
 * [NGINX Beginner's Guide](https://nginx.org/en/docs/beginners_guide.html)
   Used as a reference for web server behaviour and configuration structure. In particular, it helped in understanding the organization of `server` and `location` blocks, serving static content and the general approach used by NGINX configuration files.
+
+### Documentation
+
+- HTTP RFC documentation
+- MDN Web Docs — HTTP
+- NGINX documentation
+- Linux man pages:
+  - socket(2)
+  - bind(2)
+  - listen(2)
+  - accept(2)
+  - recv(2)
+  - send(2)
+  - epoll(7)
+  - fcntl(2)
+- CGI documentation
 
 ### Non-blocking I/O and epoll
 
@@ -738,41 +771,30 @@ AI-generated explanations and implementation suggestions were not used without r
 
 ---
 
-### Documentation
+## Testing
 
-- HTTP RFC documentation
-- MDN Web Docs — HTTP
-- NGINX documentation
-- Linux man pages:
-  - socket(2)
-  - bind(2)
-  - listen(2)
-  - accept(2)
-  - recv(2)
-  - send(2)
-  - epoll(7)
-  - fcntl(2)
-- CGI documentation
+The server was tested using different tools and types of HTTP clients in order to verify both functional behaviour and resilience.
 
----
+Testing included:
 
-### AI usage
+- standard web browsers for static content, uploads, redirects and CGI;
+- `curl` for GET, POST and DELETE requests, custom headers, uploads and error cases;
+- `netcat` and `telnet` for manually sending raw HTTP requests and testing partial requests;
+- the tester provided with the Webserv subject;
+- NGINX as a reference when comparing HTTP responses and expected behaviour;
+- Siege for stress testing and concurrent connections.
 
-AI tools were used as a learning and support resource during the project.
+Examples:
 
-They were used to:
+```bash
+curl http://localhost:8081/
+curl -X POST -d "hello=world" http://localhost:8081/post_body
+curl -X DELETE http://localhost:8081/uploads/file.txt
+siege -c 50 -r 10 http://localhost:8081/
+Raw HTTP requests can also be tested manually with:
+nc localhost 8081
+or:
+telnet localhost 8081
+These tests were used to verify request parsing, HTTP status codes, body size limits, uploads, CGI execution, client disconnections, partial reads and writes, and the server's ability to remain responsive with multiple concurrent clients.
+```
 
-- clarify HTTP concepts and protocol behaviour;
-- better understand request and response parsing;
-- study GET, POST and DELETE request handling;
-- understand multipart/form-data and chunked transfer encoding;
-- discuss edge cases and possible tests;
-- review debugging strategies;
-- better understand non-blocking I/O and epoll behaviour;
-- review and improve project documentation.
-
-AI-generated suggestions were reviewed, tested and adapted before being
-used in the project.
-
-
-## Testing?
