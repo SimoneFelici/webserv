@@ -32,11 +32,9 @@ struct ServerConfig
     std::string address;
     std::string port;
     std::string server_name;
-    //std::string version;
     std::string root;
     std::string index;
     int autoindex;
-    //int max_conn;
     size_t client_max_body_size;
     std::map<int, std::string> error_pages;
     std::vector<std::string> allowed_methods;

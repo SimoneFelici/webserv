@@ -13,7 +13,7 @@ int main(int argc, char **argv)
 
     Server server;
     Config conf;
-    // testing parsing config
+
     if (!conf.parse_config(argv[1]))
         return 1;
 

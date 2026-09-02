@@ -21,9 +21,6 @@ Server::~Server()
     }
 }
 
-// SOCKET
-// Ogni blocco "server" della configurazione deve avere
-// il proprio socket sul quale ascoltare.
 int Server::create_socket()
 {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -35,13 +32,9 @@ int Server::create_socket()
     }
     std::cout << "Success: socket created, server fd: " << server_fd << std::endl;
 
-    // Restituiamo il nuovo fd invece di salvarlo in this->fd,
-    // perché ora Server gestisce più listening socket.
     return server_fd;
 }
 
-// Collega questo specifico socket all'indirizzo e alla porta
-// contenuti nella configurazione che gli appartiene.
 bool Server::bind_socket(int server_fd, const ServerConfig &config)
 {
     struct addrinfo hints;
@@ -53,17 +46,13 @@ bool Server::bind_socket(int server_fd, const ServerConfig &config)
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     res = NULL;
-    // Ricava la struttura di rete usando address e port
-    // del blocco server corrente.
     err = getaddrinfo(config.address.c_str(), config.port.c_str(), &hints, &res);
     if (err != 0)
     {
         std::cerr << "Error: getaddrinfo: " << gai_strerror(err) << std::endl;
         return false;
     }
-    // Esegue il bind sul socket corrente.
-    // Ogni listening socket viene quindi associato
-    // alla propria coppia address:port.
+
     if (bind(server_fd, res->ai_addr, res->ai_addrlen) == -1)
     {
         std::cerr << "Error: couldn't bind " << config.address << ":" << config.port << ": " << strerror(errno) << std::endl;
@@ -89,9 +78,6 @@ bool Server::listen_socket(int server_fd, const ServerConfig &config)
     return true;
 }
 
-// EPOLL
-// Creiamo un'unica istanza epoll che controllerà
-// tutti i listening socket e tutti i client.
 bool Server::setup_epoll()
 {
     this->epoll_fd = epoll_create(1);
@@ -131,7 +117,6 @@ bool Server::modify_epoll_fd(int fd, uint32_t events)
     return true;
 }
 
-// CLIENT
 bool Server::accept_client(int client_fd, size_t config_index)
 {
     if (!set_nonblocking(client_fd))
@@ -141,7 +126,7 @@ bool Server::accept_client(int client_fd, size_t config_index)
         return false;
 
     this->clients[client_fd] = Client(client_fd);
-    this->client_configs[client_fd] = config_index; // Ora, per ogni client, salviamo quale configurazione deve utilizzare
+    this->client_configs[client_fd] = config_index;
 
     return true;
 }
@@ -392,21 +377,17 @@ bool Server::handle_client_read(int client_fd)
     if (client_it == this->clients.end())
         return false;
 
-    // Cerchiamo l'indice della configurazione
-    // precedentemente associata a questo client.
     std::map<int, size_t>::iterator config_it = this->client_configs.find(client_fd);
 
     if (config_it == this->client_configs.end())
         return false;
 
-    // Recuperiamo l'indice della ServerConfig.
     size_t config_index = config_it->second;
 
     if (config_index >= this->configs.size())
         return false;
 
     Client &client = client_it->second;
-    // Recuperiamo la configurazione corretta per questo client.
     ServerConfig &config = this->configs[config_index];
 
     char temp[SOCKET_BUFFER_SIZE];
@@ -454,10 +435,6 @@ bool Server::handle_client_read(int client_fd)
         return true;
     }
 
-    /* I byte in coda alla richiesta (l'ultimo CRLF del chunked, per esempio)
-       arrivano dopo che la risposta e' gia' stata avviata: vanno letti dal
-       socket, altrimenti alla chiusura il kernel manderebbe un RST, ma non
-       devono far ripartire prepare_response ne' forkare una seconda CGI. */
     if (client.req_done() && client.get_response().empty() && client.get_cgi_fd() == -1)
     {
         if (DEBUG)
@@ -528,16 +505,13 @@ bool Server::handle_client_write(int client_fd)
         return false;
     std::size_t bytes_left = response.size() - bytes_sent;
 
-    /*
-    response.c_str() + bytes_sent : vuol dire: parti dal punto in cui eri rimasta.
-    response.size() - bytes_sent : manda solo quello che manca */
     ssize_t sent = send(client_fd, response.c_str() + bytes_sent, bytes_left, 0);
     if (sent <= 0)
         return false;
 
-    client.add_bytes_sent(sent); // aggiorno quanti byte sono stati davvero mandati.
+    client.add_bytes_sent(sent);
 
-    if (client.clear_response()) // torna true se la risposta è stata mandata tutta
+    if (client.clear_response())
         close_client(client_fd);
     return true;
 }
@@ -728,7 +702,7 @@ bool Server::setup(const std::vector<ServerConfig> &parsed_configs)
             return false;
         }
 
-        this->listening_sockets[server_fd] = i; // Salva l’associazione: socket di ascolto → indice della configurazione
+        this->listening_sockets[server_fd] = i; 
     }
 
     return true;

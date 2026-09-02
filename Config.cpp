@@ -86,7 +86,7 @@ bool Config::hasValidValue(const std::vector<std::string> &tokens, size_t i, con
 std::vector<std::string> Config::tokenize(const std::string &content) const
 {
     std::vector<std::string> tokens;
-    std::string current; // contiene la parola che stiamo costruendo.
+    std::string current;
 
     for (size_t i = 0; i < content.size(); ++i)
     {
@@ -343,16 +343,6 @@ bool Config::parseAutoindex(const std::vector<std::string> &tokens, size_t &i, i
     return true;
 }
 
-/*
-Controlla:
-che il token iniziale sia allowed_methods;
-che la direttiva non sia già stata dichiarata;
-che ci sia almeno un metodo;
-che ogni metodo sia tra GET, POST, DELETE;
-che lo stesso metodo non compaia due volte;
-che la direttiva termini con ;;
-che l’indice i venga lasciato correttamente sul token successivo.
-*/
 bool Config::parseAllowedMethods(const std::vector<std::string> &tokens, size_t &i, std::vector<std::string> &allowed_methods)
 {
     if (i >= tokens.size() || (tokens[i] != "allowed_methods" && tokens[i] != "methods"))
@@ -446,14 +436,6 @@ bool Config::parseErrorPage(const std::vector<std::string> &tokens, size_t &i, s
     if (!hasValidValue(tokens, i, "error_page"))
         return false;
     std::vector<int> error_codes;
-    /*
-     * Servono almeno:
-     * - un codice
-     * - un path
-     * - il punto e virgola
-     * Continuiamo a leggere codici finché, dopo il token corrente,
-     * non troviamo il path seguito da ';'.
-     */
     while (i < tokens.size() &&
            tokens[i] != ";" &&
            i + 1 < tokens.size() &&
@@ -878,15 +860,12 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
 
     ++i;
 
-    /* listen è obbligatorio */
     if (server.port.empty())
     {
         std::cerr << "Error: missing listen directive in server block" << std::endl;
         return false;
     }
 
-    /* valori di default */
-    /* valori di default */
     if (server.root.empty())
         server.root = DEFAULT_ROOT;
 
@@ -902,14 +881,12 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
     if (server.client_max_body_size == 0)
         server.client_max_body_size = DEFAULT_CLIENT_MAX_BODY_SIZE;
     
-    // Controlla la max size bbody delle route sennò assegno quella del server
     for (size_t j = 0; j < server.locations.size(); ++j)
     {
         if (server.locations[j].location_max_body_size == 0)
             server.locations[j].location_max_body_size = server.client_max_body_size;
     }
 
-    /* controllo duplicati address:port */
     for (size_t j = 0; j < configs.size(); ++j)
     {
         if (configs[j].address == server.address && configs[j].port == server.port)
@@ -919,7 +896,6 @@ bool Config::parseServer(const std::vector<std::string> &tokens, size_t &i)
         }
     }
 
-    /* solo ora salvo il server */
     configs.push_back(server);
 
     return true;

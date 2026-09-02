@@ -10,7 +10,6 @@ Client::Client(int fd) : client_fd(fd), bytes_sent(0), headers_too_large(false),
 
 Client::Client() : client_fd(-1), bytes_sent(0), headers_too_large(false), body_too_large(false), cgi_fd(-1), cgi_in_fd(-1), cgi_pid(-1), last_activity(time(NULL)) {}
 
-// il distruttore per ora non chiude il fd.
 Client::~Client() {}
 
 int Client::get_fd() const
@@ -118,8 +117,6 @@ void Client::clear_request()
 {
     this->request_buffer.clear();
     this->req = HttpRequest();
-    // this->response_buffer.clear(); // deve gestirli la clear responpse senno è "sporco"
-    // this->bytes_sent = 0;
 }
 
 bool Client::req_done() const
@@ -578,7 +575,6 @@ void Client::build_error_response(int error_code, const ServerConfig &config, co
     std::string error_page_path;
     std::map<int, std::string>::const_iterator it;
 
-    /* Prima controlliamo la location più specifica.*/
     if (loc)
     {
         it = loc->error_pages.find(error_code);
@@ -587,7 +583,6 @@ void Client::build_error_response(int error_code, const ServerConfig &config, co
             error_page_path = it->second;
     }
 
-    /*Se la location non ha una pagina per questo errore, controlliamo la configurazione del server.*/
     if (error_page_path.empty())
     {
         it = config.error_pages.find(error_code);
@@ -595,8 +590,7 @@ void Client::build_error_response(int error_code, const ServerConfig &config, co
         if (it != config.error_pages.end())
             error_page_path = it->second;
     }
-
-    /*Se è stata configurata una pagina, proviamo a leggerla.*/
+    
     if (!error_page_path.empty())
     {
         std::string body;
@@ -612,11 +606,9 @@ void Client::build_error_response(int error_code, const ServerConfig &config, co
         }
     }
 
-    /* Nessuna pagina configurata, oppure file non leggibile: usiamo la pagina HTML interna. */
     build_default_error_response(error_code);
 }
 
-/* prende una stringa e la rende sicura da stampare dentro una pagina HTML. Se trova caratteri speciali HTML, li sostituisce. */
 static std::string html_escape(const std::string &s)
 {
     std::string escaped;
@@ -636,8 +628,7 @@ static std::string html_escape(const std::string &s)
     }
     return escaped;
 }
-/* Questa funzione serve solo nell’autoindex, dentro build_autoindex_body(), serve a costruire l’href.
- */
+
 static std::string join_url_path(const std::string &base, const std::string &name)
 {
     if (base.empty())
@@ -649,12 +640,7 @@ static std::string join_url_path(const std::string &base, const std::string &nam
 
 static int build_autoindex_body(const std::string &dir_path, const std::string &request_path, std::string &body)
 {
-    /*
-    DIR è un tipo della libreria C/POSIX, dichiarato in: #include <dirent.h>
-    Serve a rappresentare una directory aperta.
-    */
-    DIR *dir = opendir(dir_path.c_str()); // apri questa cartella, dammi un puntatore/handle per leggerne il contenuto
-
+    DIR *dir = opendir(dir_path.c_str()); 
     if (!dir)
     {
         if (errno == EACCES)
@@ -665,28 +651,24 @@ static int build_autoindex_body(const std::string &dir_path, const std::string &
     std::stringstream ss;
     ss << "<html><body><h1>Index of " << html_escape(request_path) << "</h1><ul>";
 
-    struct dirent *entry;                  // Poi con quel dir puoi leggere le entries:
-    while ((entry = readdir(dir)) != NULL) // Legge una voce alla volta dalla directory.
+    struct dirent *entry;                  
+    while ((entry = readdir(dir)) != NULL)
     {
         std::string name = entry->d_name;
 
         if (name == ".")
             continue;
-        /*
-        html_escape(request_path) serve a trasformare alcuni caratteri speciali in testo “sicuro” da mettere dentro HTML.
-        Se request_path contiene caratteri tipo < o >, il browser può interpretarli come tag HTML.
-        */
+
         ss << "<li><a href=\"" << html_escape(join_url_path(request_path, name)) << "\">" << html_escape(name) << "</a></li>";
     }
 
-    closedir(dir); // Chiude la directory aperta con opendir().
+    closedir(dir);
     ss << "</ul></body></html>";
     body = ss.str();
     return 200;
 }
 
-std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc,
-                                    const std::string &url_path) const
+std::string Client::build_file_path(const ServerConfig &config, const LocationConfig *loc, const std::string &url_path) const
 {
     std::string root;
 
@@ -719,29 +701,27 @@ std::string Client::build_file_path(const ServerConfig &config, const LocationCo
 
 bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
 {
-    std::string file_path; // file_path: sarà il path reale sul filesystem.
+    std::string file_path; 
     std::string directory_path;
-    std::string index;     // index: nome del file index, tipo index.html.
-    struct stat file_stat; // file_stat: struct riempita da stat() per capire se il path esiste, se è file, directory, ecc.
+    std::string index;    
+    struct stat file_stat; 
 
-    file_path = build_file_path(config, loc); // costruisce il path reale. Qui trasforma l’URL richiesto in path filesystem.
+    file_path = build_file_path(config, loc);
 
-    // Controlla se il path esiste: stat() prova a leggere informazioni sul path.
     if (stat(file_path.c_str(), &file_stat) == -1)
     {
-        if (errno == EACCES) // non ho permessi -> 403
+        if (errno == EACCES)
             build_error_response(403, config, loc);
-        else if (errno == ENOENT || errno == ENOTDIR) // non esiste o un pezzo del path non è directory
+        else if (errno == ENOENT || errno == ENOTDIR)
             build_error_response(404, config, loc);
         else
-            build_error_response(500, config, loc); // errore interno
+            build_error_response(500, config, loc);
         return true;
     }
 
-    if (S_ISDIR(file_stat.st_mode)) // Se è una directory, prova a cercare index
+    if (S_ISDIR(file_stat.st_mode))
     {
         directory_path = file_path;
-        // allora sceglie il nome dell’index: Quindi usa prima l’index della location, se esiste; altrimenti quello globale.
         if (loc && !loc->index.empty())
             index = loc->index;
         else
@@ -751,25 +731,19 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
             file_path += "/";
         file_path += index;
 
-        // Controlla se l’index esiste
         if (stat(file_path.c_str(), &file_stat) == -1)
         {
-            if (errno == EACCES) // Se non puoi accedere all’index: 403
+            if (errno == EACCES) 
                 build_error_response(403, config, loc);
-            else if (errno == ENOENT || errno == ENOTDIR) // Se l’index non esiste, Sceglie se autoindex è attivo:
+            else if (errno == ENOENT || errno == ENOTDIR) 
             {
-                /*
-                se c’è una location -> usa loc->autoindex
-                altrimenti -> usa config.autoindex
-                */
                 int autoindex_value = config.autoindex;
                 if (loc && loc->autoindex != -1)
                     autoindex_value = loc->autoindex;
-                if (autoindex_value != 1) // Se autoindex è off 403
+                if (autoindex_value != 1)
                     build_error_response(404, config, loc);
                 else
                 {
-                    // Se autoindex è on, genera il body HTML della directory listing.
                     this->res.status_code = build_autoindex_body(directory_path, this->get_path(), this->res.body);
                     if (this->res.status_code != 200)
                         build_error_response(this->res.status_code, config, loc);
@@ -785,27 +759,16 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
             return true;
         }
     }
-
-    // Verifica che il path finale sia un file normale
     if (!S_ISREG(file_stat.st_mode))
     {
         build_error_response(403, config, loc);
         return true;
     }
 
-    // Prepara risposta 200
     this->res.reason = "OK";
     this->res.content_type = get_content_type(file_path);
 
-    // Legge il file apre il file, legge il contenuto e lo mette in res.body.
-    /*
-    200 -> letto correttamente
-    403 -> permessi negati
-    404 -> file non trovato
-    500 -> errore interno
-    */
     this->res.status_code = read_file(file_path, this->res.body);
-    // Se la lettura fallisce, costruisce errore
     if (this->res.status_code != 200)
         build_error_response(this->res.status_code, config, loc);
 
@@ -814,7 +777,7 @@ bool Client::handle_get_req(ServerConfig &config, const LocationConfig *loc)
 
 int Client::write_uploaded_file(const std::string &file_path, const std::string &data)
 {
-    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644); // sono i permessi da assegnare al file quando viene creato, lo crea solo se non esiste gia
+    int file_fd = open(file_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644); 
 
     if (file_fd == -1)
     {
@@ -825,11 +788,10 @@ int Client::write_uploaded_file(const std::string &file_path, const std::string 
         return 500;
     }
 
-    size_t total_written = 0; // tiene traccia del numero di byte già scritti.x
+    size_t total_written = 0;
 
     while (total_written < data.size())
     {
-        // write(file_descriptor, dati_da_scrivere, numero_di_byte);
         ssize_t written = write(file_fd, data.c_str() + total_written, data.size() - total_written);
 
         if (written == -1)
@@ -860,7 +822,7 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
     std::string lower_content_type = content_type;
     to_lower(lower_content_type);
 
-    if (lower_content_type.find("multipart/form-data") == std::string::npos) // controlliamo che si tratti davvero di multipart/form-data.
+    if (lower_content_type.find("multipart/form-data") == std::string::npos) 
         return false;
 
     const std::string marker = "boundary=";
@@ -870,16 +832,15 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
     if (boundary_start == std::string::npos)
         return false;
 
-    boundary_start += marker.size(); // Spostiamo la posizione subito dopo "boundary=".
+    boundary_start += marker.size(); 
 
-    // Ignoriamo eventuali spazi e tab:
     while (boundary_start < content_type.size() && (content_type[boundary_start] == ' ' || content_type[boundary_start] == '\t'))
         ++boundary_start;
 
     if (boundary_start >= content_type.size())
         return false;
 
-    if (content_type[boundary_start] == '"') // check sulle virgolette
+    if (content_type[boundary_start] == '"') 
     {
         size_t boundary_end =
             content_type.find('"', boundary_start + 1);
@@ -893,10 +854,6 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
     }
     else
     {
-        /*
-         * Senza virgolette, il valore finisce al prossimo ';'
-         * oppure alla fine dell'header.
-         */
         size_t boundary_end =
             content_type.find(';', boundary_start);
 
@@ -912,7 +869,6 @@ bool Client::extract_multipart_boundary(const std::string &content_type, std::st
     if (boundary.empty())
         return false;
 
-    // Evitiamo caratteri che potrebbero rompere la struttura delle righe HTTP.
     if (boundary.find('\r') != std::string::npos || boundary.find('\n') != std::string::npos)
     {
         boundary.clear();
@@ -946,26 +902,20 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
         if (line.empty())
             return false;
 
-        size_t colon = line.find(':'); // Ogni header deve avere la forma: nome-header: valore
+        size_t colon = line.find(':');
 
         if (colon == std::string::npos || colon == 0)
             return false;
 
         std::string key = line.substr(0, colon);
 
-        if (key.find_first_of(" \t") != std::string::npos) // Non accettiamo spazi nel nome dell'header. Content Type-> non valido
+        if (key.find_first_of(" \t") != std::string::npos)
             return false;
 
         std::string value = trim(line.substr(colon + 1));
 
         to_lower(key);
 
-        /*
-         * Esempio:
-         *
-         * Content-Disposition:
-         * form-data; name="file"; filename="foto.jpg"
-         */
         if (key == "content-disposition")
         {
             if (has_content_disposition)
@@ -973,7 +923,7 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
 
             has_content_disposition = true;
 
-            size_t first_semicolon = value.find(';'); // La prima parte del valore deve essere "form-data".
+            size_t first_semicolon = value.find(';');
 
             std::string disposition;
 
@@ -1022,7 +972,6 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     return false;
 
                 std::string parameter_value;
-                // Caso con virgolette
                 if (value[pos] == '"')
                 {
                     ++pos;
@@ -1043,7 +992,7 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     if (pos < value.size() && value[pos] != ';')
                         return false;
                 }
-                else // Accettiamo anche un valore senza virgolette
+                else
                 {
                     size_t parameter_end = value.find(';', pos);
 
@@ -1073,9 +1022,7 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
                     part.filename = parameter_value;
                     has_filename = true;
                 }
-                // Eventuali parametri sconosciuti vengono ignorati. Il ciclo continuerà dal prossimo ';'
             }
-            // Ogni parte multipart/form-data deve avere un name.
             if (!has_name || part.name.empty())
                 return false;
         }
@@ -1090,7 +1037,6 @@ bool Client::parse_multipart_part_headers(const std::string &headers_block, Mult
             part.content_type = value;
             has_content_type = true;
         }
-        // Altri header della parte vengono per ora ignorati.
         if (line_end == headers_block.size())
             break;
 
@@ -1107,7 +1053,7 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
     if (body.empty() || boundary.empty())
         return 400;
 
-    std::string delimiter = "--" + boundary; // Un body multipart deve iniziare con: --BOUNDARY\r\n
+    std::string delimiter = "--" + boundary;
     if (body.compare(0, delimiter.size(), delimiter) != 0)
         return 400;
 
@@ -1115,7 +1061,6 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
 
     while (pos < body.size())
     {
-        // Se subito dopo il boundary troviamo "--" significa che questo è il boundary finale
         if (body.compare(pos, 2, "--") == 0)
         {
             if (parts.empty())
@@ -1123,20 +1068,11 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
             else
                 return 0;
         }
-        // Dopo un boundary normale ci deve essere CRLF: --BOUNDARY\r\n
         if (body.compare(pos, 2, "\r\n") != 0)
             return 400;
 
         pos += 2;
 
-        /*
-         * Cerchiamo la fine degli header della part:
-         *
-         * Content-Disposition: ...
-         * Content-Type: ...
-         *
-         * <dati>
-         */
         size_t headers_end = body.find("\r\n\r\n", pos);
 
         if (headers_end == std::string::npos)
@@ -1149,9 +1085,8 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
         if (!parse_multipart_part_headers(headers_block, part))
             return 400;
 
-        // I dati iniziano subito dopo \r\n\r\n
         size_t data_start = headers_end + 4;
-        // Il prossimo boundary è preceduto da CRLF: dati...\r\n--BOUNDARY
+
 
         std::string next_marker = "\r\n" + delimiter;
 
@@ -1160,8 +1095,6 @@ int Client::parse_multipart_body(const std::string &body, const std::string &bou
         if (next_boundary == std::string::npos)
             return 400;
 
-        // Tutto ciò che c'è tra data_start e il prossimo boundary appartiene alla part.
-        // substr() lavora anche con dati binari perché std::string può contenere byte '\0'
         part.data = body.substr(data_start, next_boundary - data_start);
 
         parts.push_back(part);
@@ -1257,13 +1190,13 @@ int Client::handle_multipart_upload(const LocationConfig *loc, const std::string
 
 bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 {
-    if (!loc) // Controlla che esista una location
+    if (!loc)
     {
         build_error_response(404, config, loc);
         return true;
     }
 
-    if (loc->upload_path.empty()) // Controlla che la location abbia una cartella upload
+    if (loc->upload_path.empty())
     {
         build_error_response(403, config, loc);
         return true;
@@ -1271,7 +1204,7 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 
     struct stat upload_stat;
 
-    if (stat(loc->upload_path.c_str(), &upload_stat) == -1) // Questo path esiste? E che tipo di elemento è?
+    if (stat(loc->upload_path.c_str(), &upload_stat) == -1)
     {
         {
             std::cerr << "UPLOAD PATH: [" << loc->upload_path << "]" << std::endl;
@@ -1286,7 +1219,7 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
         }
     }
 
-    if (!S_ISDIR(upload_stat.st_mode)) // controlla che sia davvero una directory
+    if (!S_ISDIR(upload_stat.st_mode))
     {
         build_error_response(500, config, loc);
         return true;
@@ -1305,7 +1238,6 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
     }
 
     int upload_status;
-    // Gestione multipart
     if (lower_content_type.find("multipart/form-data") != std::string::npos)
         upload_status = handle_multipart_upload(loc, content_type);
     else
@@ -1327,10 +1259,10 @@ bool Client::handle_post_req(ServerConfig &config, const LocationConfig *loc)
 
 bool Client::handle_delete_req(ServerConfig &config, const LocationConfig *loc)
 {
-    std::string file_path; // dove salveremo il percorso del file vero sul disco
-    struct stat file_stat; // creiamo una variabile di tipo struct stat
+    std::string file_path;
+    struct stat file_stat;
 
-    file_path = build_file_path(config, loc); // la scheda con le informazioni del file, stat() è la funzione che prende il path e riempie quella scheda.
+    file_path = build_file_path(config, loc); 
 
     if (stat(file_path.c_str(), &file_stat) == -1)
     {
@@ -1344,7 +1276,6 @@ bool Client::handle_delete_req(ServerConfig &config, const LocationConfig *loc)
         return true;
     }
 
-    // Non permetto alla DELETE di cancellare directory
     if (!S_ISREG(file_stat.st_mode))
     {
         build_error_response(403, config, loc);
@@ -1362,8 +1293,6 @@ bool Client::handle_delete_req(ServerConfig &config, const LocationConfig *loc)
 
         return true;
     }
-
-    // 204 No Content significa richiesta eseguita correttamente, ma non c'è body da restituire.
     this->res.status_code = 204;
     this->res.reason = "No Content";
     this->res.content_type.clear();
@@ -1404,13 +1333,12 @@ bool Client::is_method_allowed(const std::vector<std::string> &allowed) const
     return false;
 }
 
-// TODO: to check implementation
 int Client::sanitize_path()
 {
     std::string &path = req.path;
     std::vector<std::string> segs;
 
-    size_t i = 1; // path[0] è '/' garantito da parse_request_line
+    size_t i = 1;
     while (i <= path.size())
     {
         size_t j = path.find('/', i);
@@ -1421,7 +1349,7 @@ int Client::sanitize_path()
         if (seg == "..")
         {
             if (segs.empty())
-                return 403; // uscirebbe sopra la root
+                return 403;
             segs.pop_back();
         }
         else if (!seg.empty() && seg != ".")
@@ -1451,7 +1379,6 @@ int Client::validate_req(ServerConfig &config, const LocationConfig *&loc)
     if (status != 0)
         return status;
 
-    // Troviamo la location associata al path della request
     loc = match_location(config);
 
     const std::vector<std::string> *allowed;
@@ -1701,8 +1628,6 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
     env.push_back("CONTENT_LENGTH=" + c_len.str());
     env.push_back("CONTENT_TYPE=" + this->get_header("content-type"));
     env.push_back("REDIRECT_STATUS=200");
-    /* Lo standard CGI vuole ogni header della richiesta nell'ambiente come
-   HTTP_<NOME>, in maiuscolo e con i trattini sostituiti da underscore. */
     for (std::map<std::string, std::string>::const_iterator it = this->req.headers.begin();
          it != this->req.headers.end(); ++it)
     {
@@ -1716,7 +1641,6 @@ bool Client::exec_cgi(const std::string &script_path, const std::string &script_
                 name[i] = static_cast<char>(toupper(static_cast<unsigned char>(name[i])));
         }
 
-        /* Questi due hanno gia' una variabile dedicata senza prefisso. */
         if (name == "CONTENT_LENGTH" || name == "CONTENT_TYPE")
             continue;
 
