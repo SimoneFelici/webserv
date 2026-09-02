@@ -328,23 +328,44 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
     {
         const std::string &cl = req.headers["content-length"];
 
-        // TODO: For now we can parse a max of 1GB
-        if (cl.empty() || cl.size() > 9)
+        if (cl.empty())
         {
             req.state = HttpRequest::ERROR;
             return true;
         }
+
+        std::size_t content_length = 0;
+        bool too_large = false;
+
         for (size_t i = 0; i < cl.size(); ++i)
         {
-            if (!isdigit(static_cast<unsigned char>(cl[i])))
+            unsigned char c = static_cast<unsigned char>(cl[i]);
+
+            if (!isdigit(c))
             {
                 req.state = HttpRequest::ERROR;
                 return true;
             }
-        }
-        long content_length = std::atol(cl.c_str());
 
-        if (static_cast<size_t>(content_length) > max_body_size)
+            if (!too_large)
+            {
+                std::size_t d = static_cast<std::size_t>(c - '0');
+
+                const std::size_t size_max = static_cast<std::size_t>(-1);
+
+                if (content_length > (size_max - d) / 10)
+                    too_large = true;
+                else
+                {
+                    content_length = content_length * 10 + d;
+
+                    if (content_length > max_body_size)
+                        too_large = true;
+                }
+            }
+        }
+
+        if (too_large)
         {
             this->body_too_large = true;
             req.state = HttpRequest::ERROR;
@@ -352,7 +373,7 @@ bool Client::parse_body(std::size_t &pos, std::size_t max_body_size)
         }
 
         size_t available = this->request_buffer.size() - pos;
-        if (available < static_cast<size_t>(content_length))
+        if (available < content_length)
             return true;
         req.body = this->request_buffer.substr(pos, content_length);
         pos += content_length;
