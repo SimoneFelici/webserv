@@ -32,7 +32,6 @@ std::string trim(const std::string &s)
 
 std::string get_content_type(const std::string &file_path)
 {
-    // TODO: add more extensions, especially when adding CGI
     static std::map<std::string, std::string> mime;
     if (mime.empty())
     {
